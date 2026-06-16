@@ -9,8 +9,8 @@ os.environ.setdefault(
 
 import matplotlib
 import networkx as nx
-from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
-from PySide6.QtWidgets import QVBoxLayout, QWidget
+from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
+from PySide2.QtWidgets import QVBoxLayout, QWidget
 
 # 延迟设置后端 — 必须在 QApplication 创建之后才能调用
 _backend_set = False
@@ -19,7 +19,7 @@ _backend_set = False
 def _ensure_backend():
     global _backend_set
     if not _backend_set:
-        matplotlib.use("QtAgg")
+        matplotlib.use("Qt5Agg")
         _backend_set = True
 
 

@@ -32,18 +32,18 @@ hiddenimports += collect_submodules("networkx.drawing")
 hiddenimports += collect_submodules("networkx.generators")
 hiddenimports += collect_submodules("networkx.readwrite")
 
-# matplotlib 后端（PySide6 使用 QtAgg）
+# matplotlib 后端（PySide2 使用 Qt5Agg）
 hiddenimports += collect_submodules("matplotlib.backends")
 hiddenimports += [
-    "matplotlib.backends.backend_qtagg",
     "matplotlib.backends.backend_qt5agg",
+    "matplotlib.backends.backend_qtagg",
     "matplotlib.figure",
     "matplotlib.pyplot",
 ]
 hiddenimports += collect_submodules("matplotlib")
 
-# PySide6
-hiddenimports += collect_submodules("PySide6")
+# PySide2
+hiddenimports += collect_submodules("PySide2")
 
 # 其他可能缺失的依赖
 hiddenimports += [

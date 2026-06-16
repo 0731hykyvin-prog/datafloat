@@ -1,5 +1,5 @@
 import sys
-from PySide6.QtWidgets import QApplication
+from PySide2.QtWidgets import QApplication
 from ui.main_window import MainWindow
 
 if __name__ == "__main__":

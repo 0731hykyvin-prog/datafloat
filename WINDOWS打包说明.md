@@ -89,7 +89,7 @@ Datafloat_codex
 临时将 `Datafloat.spec` 中 `console=False` 改为 `console=True`，重新打包后运行可看到错误信息。
 
 ### Q: 打包后 exe 很大？
-正常。因为 Python 解释器 + PySide6 + pandas + matplotlib 等大型库会被打包进去。约 200-400 MB。
+正常。因为 Python 解释器 + PySide2 + pandas + matplotlib 等大型库会被打包进去。约 150-300 MB。
 
 ### Q: 能否减小体积？
 可以在 `Datafloat.spec` 的 `excludes` 列表中添加不需要的模块，或使用 `upx=True` 压缩（需先安装 UPX）。
