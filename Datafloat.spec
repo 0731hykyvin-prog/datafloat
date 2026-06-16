@@ -1,5 +1,7 @@
 # -*- mode: python ; coding: utf-8 -*-
 
+import os
+
 from PyInstaller.utils.hooks import collect_data_files, collect_submodules
 
 # ── 数据文件 ──────────────────────────────────────────
@@ -111,6 +113,15 @@ a = Analysis(
         "curses",
         "sqlite3",
         "ssl",
+        # PostgreSQL / 数据库相关（Datafloat 不用）
+        "psycopg2",
+        "psycopg2-binary",
+        "sqlalchemy",
+        "MySQLdb",
+        "pymysql",
+        "pymssql",
+        "cx_Oracle",
+        "libpq",
     ],
     noarchive=False,
     optimize=0,
@@ -118,10 +129,20 @@ a = Analysis(
 
 pyz = PYZ(a.pure)
 
+# ── 排除不相关的 DLL / 二进制文件 ──────────────────────
+# LIBPQ.dll 是 PostgreSQL 的库，Datafloat 根本不用数据库，必须排除
+cleaned_binaries = [
+    (src, dst) for (src, dst) in a.binaries
+    if "libpq" not in src.lower()
+    and "libcrypto" not in os.path.basename(src).lower()
+    and "libssl" not in os.path.basename(src).lower()
+    and "ssleay" not in os.path.basename(src).lower()
+]
+
 exe = EXE(
     pyz,
     a.scripts,
-    a.binaries,
+    cleaned_binaries,
     a.datas,
     [],
     name="Datafloat数据处理平台",
