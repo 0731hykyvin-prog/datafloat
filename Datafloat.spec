@@ -2,25 +2,21 @@
 
 import os
 
-from PyInstaller.utils.hooks import collect_data_files, collect_submodules
+from PyInstaller.utils.hooks import collect_data_files
 
 # ── 数据文件 ──────────────────────────────────────────
 datas = [
     ("templates", "templates"),
 ]
-# matplotlib 字体、配置文件
 datas += collect_data_files("matplotlib", include_py_files=False)
 
-# ── 隐藏导入（只列出 PyInstaller 自动检测可能遗漏的）──
+# ── 隐藏导入 ─────────────────────────────────────────
 hiddenimports = [
-    # pandas I/O（Excel 引擎入口）
     "pandas.io.excel._openpyxl",
     "pandas.io.excel._xlrd",
-    # matplotlib 可视化后端
     "matplotlib.backends.backend_qt5agg",
     "matplotlib.figure",
     "matplotlib.pyplot",
-    # 包版本检测（matplotlib 内部依赖）
     "packaging",
     "packaging.version",
     "packaging.specifiers",
@@ -37,35 +33,17 @@ a = Analysis(
     hooksconfig={},
     runtime_hooks=[],
     excludes=[
-        # 排除用不到的大型库，缩小 exe 体积
-        "tkinter",
-        "tcl",
-        "Tkinter",
-        "unittest",
-        "pytest",
-        "setuptools",
-        "pip",
-        "wheel",
-        "distutils",
-        "IPython",
-        "jupyter",
-        "notebook",
-        "sphinx",
-        "docutils",
-        "Cython",
-        "scipy",
-        "PIL",
-        "Pillow",
-        "curses",
-        "sqlite3",
-        # 数据库（Datafloat 不用）
-        "psycopg2",
-        "sqlalchemy",
-        "MySQLdb",
-        "pymysql",
-        "cx_Oracle",
+        "tkinter", "tcl", "Tkinter",
+        "unittest", "pytest",
+        "setuptools", "pip", "wheel", "distutils",
+        "IPython", "jupyter", "notebook",
+        "sphinx", "docutils",
+        "Cython", "scipy",
+        "PIL", "Pillow",
+        "curses", "sqlite3",
+        "psycopg2", "sqlalchemy",
+        "MySQLdb", "pymysql", "cx_Oracle",
         "libpq",
-        # 注意：不要排除 test，pandas 运行可能需要某些内部模块
     ],
     noarchive=False,
     optimize=0,
@@ -73,7 +51,7 @@ a = Analysis(
 
 pyz = PYZ(a.pure)
 
-# ── 过滤无关二进制 ────────────────────────────────────
+# ── 过滤无关 DLL ─────────────────────────────────────
 cleaned_binaries = [
     t for t in a.binaries
     if "libpq" not in t[0].lower()
@@ -82,6 +60,7 @@ cleaned_binaries = [
     and "ssleay" not in os.path.basename(t[0]).lower()
 ]
 
+# ── 主程序 EXE ───────────────────────────────────────
 exe = EXE(
     pyz,
     a.scripts,
@@ -102,4 +81,15 @@ exe = EXE(
     codesign_identity=None,
     entitlements_file=None,
     icon=None,
+)
+
+# ── 收集为文件夹（onedir）—— 避免单文件解压崩溃 ──────
+coll = COLLECT(
+    exe,
+    cleaned_binaries,
+    a.datas,
+    strip=False,
+    upx=False,
+    upx_exclude=[],
+    name="Datafloat数据处理平台",
 )

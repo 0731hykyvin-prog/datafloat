@@ -29,9 +29,9 @@ jobs:
         run: |
           pyinstaller Datafloat.spec
 
-      - name: 上传 EXE 产物
+      - name: 上传产物（整个文件夹）
         uses: actions/upload-artifact@v4
         with:
           name: Datafloat数据处理平台
-          path: dist\Datafloat数据处理平台.exe
+          path: dist\Datafloat数据处理平台\
           retention-days: 90
