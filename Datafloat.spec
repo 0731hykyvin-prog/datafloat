@@ -75,11 +75,11 @@ pyz = PYZ(a.pure)
 
 # ── 过滤无关二进制 ────────────────────────────────────
 cleaned_binaries = [
-    (src, dst) for (src, dst) in a.binaries
-    if "libpq" not in src.lower()
-    and "libcrypto" not in os.path.basename(src).lower()
-    and "libssl" not in os.path.basename(src).lower()
-    and "ssleay" not in os.path.basename(src).lower()
+    t for t in a.binaries
+    if "libpq" not in t[0].lower()
+    and "libcrypto" not in os.path.basename(t[0]).lower()
+    and "libssl" not in os.path.basename(t[0]).lower()
+    and "ssleay" not in os.path.basename(t[0]).lower()
 ]
 
 exe = EXE(
