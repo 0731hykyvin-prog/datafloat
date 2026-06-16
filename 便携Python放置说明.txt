@@ -1,0 +1,24 @@
+如果内网电脑没有安装 Python，可以把便携版 Python 放到这里：
+
+Datafloat_codex
+├─ portable_python
+│  ├─ python.exe
+│  ├─ python311.dll / python314.dll 等文件
+│  └─ Lib
+├─ wheels
+├─ 2_build_offline_exe.cmd
+└─ ...
+
+然后双击 2_build_offline_exe.cmd。
+
+注意：
+1. portable_python 的 Python 大版本必须和 wheels 中的依赖包匹配。
+   例如 wheels 中如果是 cp314，就要使用 Python 3.14。
+   如果 wheels 中是 cp311，就要使用 Python 3.11。
+
+2. 更推荐的方式是在有 Python 的电脑上先打包好 exe。
+   打包完成后，只需要把 dist\Datafloat数据处理平台.exe 拷到内网电脑运行。
+   运行 exe 的电脑不需要安装 Python，也不需要 wheels。
+
+3. wheels 文件夹里不能直接放 Python 本体。
+   wheels 是 pip 依赖包目录，Python 本体要放在 portable_python 文件夹。

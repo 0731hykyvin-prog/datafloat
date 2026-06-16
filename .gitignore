@@ -1,0 +1,26 @@
+# 打包产物
+dist/
+build/
+*.spec.bak
+__pycache__/
+*.pyc
+*.pyo
+wheels/
+portable_python/
+
+# 运行时产物
+merged.xlsx
+logs/
+output/
+交易分析结果/
+
+# 系统文件
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+
+# IDE
+.vscode/
+.idea/
+*.code-workspace
