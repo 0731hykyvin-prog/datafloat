@@ -8,74 +8,22 @@ from PyInstaller.utils.hooks import collect_data_files, collect_submodules
 datas = [
     ("templates", "templates"),
 ]
-# matplotlib 字体、配置文件等
+# matplotlib 字体、配置文件
 datas += collect_data_files("matplotlib", include_py_files=False)
 
-# ── 隐藏导入（PyInstaller 自动检测不到的模块）─────────
-hiddenimports = []
-
-# pandas
-hiddenimports += collect_submodules("pandas")
-hiddenimports += collect_submodules("pandas._libs")
-hiddenimports += collect_submodules("pandas.io")
-
-# openpyxl（Excel 读写引擎）
-hiddenimports += collect_submodules("openpyxl")
-
-# xlrd（老格式 .xls）
-hiddenimports += collect_submodules("xlrd")
-
-# networkx（关系图谱）
-hiddenimports += collect_submodules("networkx")
-hiddenimports += collect_submodules("networkx.algorithms")
-hiddenimports += collect_submodules("networkx.drawing")
-hiddenimports += collect_submodules("networkx.generators")
-hiddenimports += collect_submodules("networkx.readwrite")
-
-# matplotlib 后端（PySide2 使用 Qt5Agg）
-hiddenimports += collect_submodules("matplotlib.backends")
-hiddenimports += [
+# ── 隐藏导入（只列出 PyInstaller 自动检测可能遗漏的）──
+hiddenimports = [
+    # pandas I/O（Excel 引擎入口）
+    "pandas.io.excel._openpyxl",
+    "pandas.io.excel._xlrd",
+    # matplotlib 可视化后端
     "matplotlib.backends.backend_qt5agg",
-    "matplotlib.backends.backend_qtagg",
     "matplotlib.figure",
     "matplotlib.pyplot",
-]
-hiddenimports += collect_submodules("matplotlib")
-
-# PySide2
-hiddenimports += collect_submodules("PySide2")
-
-# 其他可能缺失的依赖
-hiddenimports += [
+    # 包版本检测（matplotlib 内部依赖）
     "packaging",
     "packaging.version",
     "packaging.specifiers",
-    "packaging.requirements",
-    "packaging.markers",
-    "packaging.tags",
-    "packaging.utils",
-    "xml",
-    "xml.etree",
-    "xml.etree.ElementTree",
-    "lxml",
-    "html",
-    "html.parser",
-    "json",
-    "csv",
-    "io",
-    "os",
-    "sys",
-    "re",
-    "datetime",
-    "collections",
-    "warnings",
-    "tempfile",
-    "shutil",
-    "pathlib",
-    "ctypes",
-    "numbers",
-    "decimal",
-    "zoneinfo",
 ]
 
 # ── 分析 ─────────────────────────────────────────────
@@ -89,11 +37,10 @@ a = Analysis(
     hooksconfig={},
     runtime_hooks=[],
     excludes=[
-        # 排除不需要的大型库，减小体积
+        # 排除用不到的大型库，缩小 exe 体积
         "tkinter",
         "tcl",
         "Tkinter",
-        "test",
         "unittest",
         "pytest",
         "setuptools",
@@ -106,22 +53,19 @@ a = Analysis(
         "sphinx",
         "docutils",
         "Cython",
-        "numpy.tests",
         "scipy",
         "PIL",
         "Pillow",
         "curses",
         "sqlite3",
-        "ssl",
-        # PostgreSQL / 数据库相关（Datafloat 不用）
+        # 数据库（Datafloat 不用）
         "psycopg2",
-        "psycopg2-binary",
         "sqlalchemy",
         "MySQLdb",
         "pymysql",
-        "pymssql",
         "cx_Oracle",
         "libpq",
+        # 注意：不要排除 test，pandas 运行可能需要某些内部模块
     ],
     noarchive=False,
     optimize=0,
@@ -129,8 +73,7 @@ a = Analysis(
 
 pyz = PYZ(a.pure)
 
-# ── 排除不相关的 DLL / 二进制文件 ──────────────────────
-# LIBPQ.dll 是 PostgreSQL 的库，Datafloat 根本不用数据库，必须排除
+# ── 过滤无关二进制 ────────────────────────────────────
 cleaned_binaries = [
     (src, dst) for (src, dst) in a.binaries
     if "libpq" not in src.lower()
@@ -149,14 +92,14 @@ exe = EXE(
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
-    upx=False,          # 关闭 UPX 避免找不到 upx 导致打包失败
+    upx=False,
     upx_exclude=[],
     runtime_tmpdir=None,
-    console=False,       # 发布时不显示控制台窗口；调试时可改为 True
+    console=False,
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon=None,           # 可在此指定 .ico 图标路径
+    icon=None,
 )
