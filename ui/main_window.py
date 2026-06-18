@@ -128,15 +128,19 @@ class MainWindow(QWidget):
         self.folder_label = QLabel("未选择文件夹")
         self.folder_label.setObjectName("pathLabel")
         self.folder_label.setWordWrap(True)
-        btn_sel = QPushButton("选择话单文件夹")
-        btn_sel.setObjectName("primaryButton")
+        btn_folder = QPushButton("选择话单文件夹")
+        btn_folder.setObjectName("primaryButton")
+        btn_file = QPushButton("选择话单文件")
+        btn_file.setObjectName("primaryButton")
         self.file_list = QListWidget()
         self.file_list.setAlternatingRowColors(True)
         sl.addWidget(self.folder_label)
-        sl.addWidget(btn_sel)
-        sl.addWidget(QLabel("文件列表"))
+        sl.addWidget(btn_folder)
+        sl.addWidget(btn_file)
+        sl.addWidget(QLabel("已选文件"))
         sl.addWidget(self.file_list, 1)
-        btn_sel.clicked.connect(self.select_folder)
+        btn_folder.clicked.connect(self.select_folder)
+        btn_file.clicked.connect(self.select_files)
         self.file_list.itemDoubleClicked.connect(self.preview_file)
 
         # 处理
@@ -214,7 +218,23 @@ class MainWindow(QWidget):
         for fp in self.current_files:
             self.file_list.addItem(os.path.basename(fp))
         self.status_badge.setText("已导入")
-        self.log(f"扫描到 {len(self.current_files)} 个文件")
+        self.log(f"扫描文件夹: {folder}")
+        self.log(f"找到 {len(self.current_files)} 个文件")
+
+    def select_files(self):
+        paths, _ = QFileDialog.getOpenFileNames(
+            self, "选择话单文件", "",
+            "表格文件 (*.xlsx *.xls *.xlsm *.csv);;所有文件 (*)"
+        )
+        if not paths:
+            return
+        self.folder_label.setText(f"已选择 {len(paths)} 个文件")
+        self.file_list.clear()
+        self.current_files = paths
+        for fp in self.current_files:
+            self.file_list.addItem(os.path.basename(fp))
+        self.status_badge.setText("已导入")
+        self.log(f"直接选择了 {len(self.current_files)} 个文件")
 
     def preview_file(self, item):
         idx = self.file_list.row(item)
@@ -223,7 +243,7 @@ class MainWindow(QWidget):
 
     def start_process(self):
         if not self.current_files:
-            self.log("请先选择文件夹")
+            self.log("请先选择文件夹或文件")
             return
         tmpl = self.template_box.currentText()
         mapping = None
