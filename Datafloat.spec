@@ -15,12 +15,12 @@ hiddenimports = [
 ]
 
 # ── 收集 Python 运行时 DLL ───────────────────────────
-# python39.dll + VC++ 运行时 + UCRT（Win7 需要）
+# python38.dll + VC++ 运行时 + UCRT（Win7 需要）
 python_dir = os.path.dirname(sys.executable)
 binaries = []
 
 # 核心 VC++ 运行时（Python 安装目录自带）
-for dll_name in ["python39.dll", "vcruntime140.dll", "vcruntime140_1.dll"]:
+for dll_name in ["python38.dll", "vcruntime140.dll", "vcruntime140_1.dll"]:
     src = os.path.join(python_dir, dll_name)
     if os.path.exists(src):
         binaries.append((src, "."))
