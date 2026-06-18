@@ -5,6 +5,7 @@ TAB 2: 银行交易分析（流水快进快出+风险评分）
 """
 
 import os
+import threading
 
 import pandas as pd
 
@@ -18,6 +19,7 @@ from ui.qt_compat import (
     QHBoxLayout,
     QLabel,
     QListWidget,
+    QMessageBox,
     QPushButton,
     QSplitter,
     QTabWidget,
@@ -31,7 +33,9 @@ from ui.qt_compat import (
 from core.analytics import (
     get_data_summary,
     get_global_top_contacts,
-    get_night_calls,
+    get_night_calls_by_user,
+    get_night_calls_summary,
+    get_risk_by_user,
     get_risk_contacts,
     get_top_contacts_by_user,
 )
@@ -42,6 +46,8 @@ from ui.bank_panel import BankPanel
 from ui.mapping_window import MappingWindow
 from ui.preview_window import PreviewWindow
 
+MAX_TABLE_ROWS = 500  # 表格最多显示行数，保证UI流畅
+
 
 class MainWindow(QWidget):
     def __init__(self):
@@ -49,16 +55,43 @@ class MainWindow(QWidget):
         self.setWindowTitle("Datafloat 数据处理平台 V3.0")
         self.resize(1100, 700)
 
-        # ── 话单分析状态 ──
         self.current_files = []
         self.merged_df = None
         self.template_manager = TemplateManager()
         self.metric_labels = {}
+        self._busy = False
 
         self.init_ui()
         self.apply_style()
         self.refresh_templates()
         self.update_call_summary()
+
+    # ══════════════════════════════════════════════
+    # 线程安全 — 防止重复点击 + UI 反馈
+    # ══════════════════════════════════════════════
+
+    def _set_busy(self, busy):
+        """设置忙碌状态：禁用按钮，改鼠标指针。"""
+        self._busy = busy
+        self.setCursor(Qt.WaitCursor if busy else Qt.ArrowCursor)
+        for attr in ['btn_summary', 'btn_top', 'btn_night', 'btn_risk']:
+            btn = getattr(self, attr, None)
+            if btn:
+                btn.setEnabled(not busy)
+
+    def _run_async(self, func, *args, **kwargs):
+        """在后台线程执行 func，执行期间禁用按钮。"""
+        if self._busy:
+            return
+        self._set_busy(True)
+        def wrapper():
+            try:
+                func(*args, **kwargs)
+            except Exception as e:
+                self.log(f"❌ 错误: {e}")
+            finally:
+                self._set_busy(False)
+        threading.Thread(target=wrapper, daemon=True).start()
 
     # ══════════════════════════════════════════════
     # UI 布局
@@ -68,11 +101,7 @@ class MainWindow(QWidget):
         root = QVBoxLayout(self)
         root.setContentsMargins(12, 12, 12, 12)
         root.setSpacing(8)
-
-        # 标题栏
         root.addWidget(self._build_header())
-
-        # 两个 Tab
         self.tabs = QTabWidget()
         self.tabs.addTab(self._build_call_tab(), "📞 话单分析")
         self.tabs.addTab(BankPanel(), "🏦 银行交易分析")
@@ -83,7 +112,6 @@ class MainWindow(QWidget):
         frame.setObjectName("header")
         layout = QHBoxLayout(frame)
         layout.setContentsMargins(16, 12, 16, 12)
-
         title = QLabel("Datafloat 数据处理平台 V3.0")
         title.setObjectName("title")
         sub = QLabel("话单分析 · 银行交易分析  |  Win7/Win10/Win11 通用")
@@ -91,24 +119,21 @@ class MainWindow(QWidget):
         box = QVBoxLayout()
         box.addWidget(title)
         box.addWidget(sub)
-
         self.status_badge = QLabel("就绪")
         self.status_badge.setObjectName("statusBadge")
         self.status_badge.setAlignment(Qt.AlignCenter)
-
         layout.addLayout(box, 1)
         layout.addWidget(self.status_badge)
         return frame
 
     # ══════════════════════════════════════════════
-    # TAB 1: 话单分析
+    # TAB 1: 话单分析 — 侧边栏
     # ══════════════════════════════════════════════
 
     def _build_call_tab(self):
         wrap = QWidget()
         root = QHBoxLayout(wrap)
         root.setContentsMargins(0, 0, 0, 0)
-
         splitter = QSplitter(Qt.Horizontal)
         splitter.addWidget(self._build_call_sidebar())
         splitter.addWidget(self._build_call_workspace())
@@ -127,7 +152,7 @@ class MainWindow(QWidget):
         # 数据源
         src = QGroupBox("数据源")
         sl = QVBoxLayout(src)
-        self.folder_label = QLabel("未选择文件夹")
+        self.folder_label = QLabel("未选择文件")
         self.folder_label.setObjectName("pathLabel")
         self.folder_label.setWordWrap(True)
         btn_folder = QPushButton("选择话单文件夹")
@@ -151,8 +176,6 @@ class MainWindow(QWidget):
         pl.addWidget(QLabel("数据模板"))
         self.template_box = QComboBox()
         btn_map = QPushButton("字段映射")
-
-        # 输出目录
         pl.addWidget(QLabel("输出目录"))
         out_row = QHBoxLayout()
         self.output_label = QLabel("程序默认目录")
@@ -165,7 +188,6 @@ class MainWindow(QWidget):
         pl.addLayout(out_row)
         self.output_dir = None
         btn_out.clicked.connect(self.select_output_dir)
-
         btn_merge = QPushButton("合并处理")
         btn_merge.setObjectName("primaryButton")
         btn_direct = QPushButton("直接处理当前文件")
@@ -174,12 +196,16 @@ class MainWindow(QWidget):
         pl.addWidget(btn_merge)
         pl.addWidget(btn_direct)
         btn_map.clicked.connect(self.open_mapping)
-        btn_merge.clicked.connect(lambda: self.start_process(mode="merge"))
-        btn_direct.clicked.connect(lambda: self.start_process(mode="direct"))
+        btn_merge.clicked.connect(lambda: self._run_async(self.start_process, "merge"))
+        btn_direct.clicked.connect(lambda: self._run_async(self.start_process, "direct"))
 
         layout.addWidget(src, 3)
         layout.addWidget(proc)
         return panel
+
+    # ══════════════════════════════════════════════
+    # TAB 1: 话单分析 — 工作区
+    # ══════════════════════════════════════════════
 
     def _build_call_workspace(self):
         panel = QFrame()
@@ -188,25 +214,22 @@ class MainWindow(QWidget):
         layout.setContentsMargins(14, 14, 14, 14)
         layout.setSpacing(10)
 
-        # 概览指标
         self.summary_grid = QGridLayout()
         summary_frame = QFrame()
         summary_frame.setObjectName("summaryPanel")
         summary_frame.setLayout(self.summary_grid)
         layout.addWidget(summary_frame)
 
-        # 按钮栏
         bar = QHBoxLayout()
-        self.btn_summary = QPushButton("刷新概览")
-        self.btn_top = QPushButton("高频联系人")
-        self.btn_night = QPushButton("深夜通话")
-        self.btn_risk = QPushButton("风险关系")
+        self.btn_summary = QPushButton("刷新概览（高频联系人）")
+        self.btn_top = QPushButton("高频联系人明细")
+        self.btn_night = QPushButton("深夜通话分析")
+        self.btn_risk = QPushButton("风险关系分析")
         for b in [self.btn_summary, self.btn_top, self.btn_night, self.btn_risk]:
             bar.addWidget(b)
         bar.addStretch()
         layout.addLayout(bar)
 
-        # 结果区域
         self.result_table = QTableWidget()
         self.result_table.setAlternatingRowColors(True)
         self.result_table.setSortingEnabled(True)
@@ -218,10 +241,10 @@ class MainWindow(QWidget):
         layout.addWidget(self.result_table, 1)
         layout.addWidget(self.log_box)
 
-        self.btn_summary.clicked.connect(self.run_call_summary)
-        self.btn_top.clicked.connect(self.run_call_top)
-        self.btn_night.clicked.connect(self.run_call_night)
-        self.btn_risk.clicked.connect(self.run_call_risk)
+        self.btn_summary.clicked.connect(lambda: self._run_async(self.run_call_summary))
+        self.btn_top.clicked.connect(lambda: self._run_async(self.run_call_top))
+        self.btn_night.clicked.connect(lambda: self._run_async(self.run_call_night))
+        self.btn_risk.clicked.connect(lambda: self._run_async(self.run_call_risk))
         return panel
 
     # ══════════════════════════════════════════════
@@ -280,22 +303,23 @@ class MainWindow(QWidget):
             if mapping:
                 self.log(f"加载模板: {tmpl}")
 
+        self.status_badge.setText("处理中...")
         if mode == "direct":
-            # 直接处理：当前列表选中的文件
             idx = self.file_list.currentRow()
             if idx < 0 or idx >= len(self.current_files):
                 self.log("请在文件列表中点击选中要直接处理的文件")
+                self.status_badge.setText("就绪")
                 return
             target = [self.current_files[idx]]
             self.log(f"直接处理: {os.path.basename(target[0])}")
             result = merge_excel_files(target, "processed.xlsx", mapping, self.output_dir)
         else:
-            # 合并处理：所有文件
             self.log(f"合并处理 {len(self.current_files)} 个文件 ...")
             result = merge_excel_files(self.current_files, "merged.xlsx", mapping, self.output_dir)
 
         if not result or result.get("df") is None or result["df"].empty:
             self.log("处理失败：没有可合并的数据")
+            self.status_badge.setText("就绪")
             return
         self.merged_df = result["df"]
         self.status_badge.setText("处理完成")
@@ -303,6 +327,7 @@ class MainWindow(QWidget):
             self.log(line)
         self.update_call_summary()
         self.run_call_summary()
+        self.status_badge.setText("就绪")
 
     def update_call_summary(self):
         summary = get_data_summary(self.merged_df)
@@ -334,11 +359,9 @@ class MainWindow(QWidget):
         return True
 
     def _get_out_dir(self):
-        """获取输出目录，优先用户选择，否则程序默认。"""
         return self.output_dir if self.output_dir else os.getcwd()
 
     def _save_excel(self, df, filename):
-        """保存 DataFrame 为 Excel 到输出目录。"""
         if df is None or df.empty:
             return
         out_dir = self._get_out_dir()
@@ -347,68 +370,9 @@ class MainWindow(QWidget):
         df.to_excel(path, index=False)
         self.log(f"📁 已导出: {path}")
 
-    def run_call_summary(self):
-        if not self._need_data():
-            return
-        s = get_data_summary(self.merged_df)
-        top = get_global_top_contacts(self.merged_df, top_n=5)
-        lines = ["数据概览"]
-        for k, v in s.items():
-            lines.append(f"  {k}: {v}")
-        if not top.empty:
-            lines.append("\n高频对方号码 TOP 5:")
-            for _, r in top.iterrows():
-                lines.append(f"  {r['对方号码']}  {int(r['次数'])}次")
-        self.log("\n".join(lines))
-        self.show_call_table(top)
-        self._save_excel(top, "01_高频联系人TOP5.xlsx")
-
-    def run_call_top(self):
-        if not self._need_data():
-            return
-        data = get_top_contacts_by_user(self.merged_df)
-        gt = get_global_top_contacts(self.merged_df)
-        if not data:
-            self.log("无可分析的联系人数据")
-            return
-        lines = ["分本方号码高频联系人"]
-        rows = []
-        for user, tbl in data.items():
-            lines.append(f"\n{user}")
-            for _, r in tbl.iterrows():
-                lines.append(f"  {r['对方号码']}  {int(r['次数'])}次")
-            rows.append(tbl)
-        self.log("\n".join(lines))
-        self.show_call_table(gt)
-        # 分用户导出
-        all_top = pd.concat(rows, ignore_index=True) if rows else pd.DataFrame()
-        self._save_excel(all_top, "02_分用户高频联系人.xlsx")
-
-    def run_call_night(self):
-        if not self._need_data():
-            return
-        tbl = get_night_calls(self.merged_df)
-        self.log(f"深夜通话: 共 {len(tbl)} 条 (00:00-05:59)")
-        self.show_call_table(tbl)
-        self._save_excel(tbl, "03_深夜通话明细.xlsx")
-
-    def run_call_risk(self):
-        if not self._need_data():
-            return
-        tbl = get_risk_contacts(self.merged_df)
-        if tbl.empty:
-            self.log("未发现达到阈值的风险关系")
-            return
-        lines = ["风险关系 TOP 10"]
-        for _, r in tbl.head(10).iterrows():
-            lines.append(
-                f"{r['本方号码']} -> {r['对方号码']}  "
-                f"风险分{int(r['风险分'])} "
-                f"(总{int(r['总次数'])}/深夜{int(r['深夜次数'])}/短{int(r['短通话次数'])})"
-            )
-        self.log("\n".join(lines))
-        self.show_call_table(tbl)
-        self._save_excel(tbl, "04_风险关系.xlsx")
+    # ══════════════════════════════════════════════
+    # 快速表格渲染（限制行数保证流畅）
+    # ══════════════════════════════════════════════
 
     def show_call_table(self, df):
         self.result_table.setSortingEnabled(False)
@@ -418,7 +382,9 @@ class MainWindow(QWidget):
             self.result_table.setColumnCount(0)
             self.result_table.setSortingEnabled(True)
             return
-        td = df.fillna("").copy()
+        # 限制显示行数
+        show = df.head(MAX_TABLE_ROWS)
+        td = show.fillna("").copy()
         self.result_table.setRowCount(len(td))
         self.result_table.setColumnCount(len(td.columns))
         self.result_table.setHorizontalHeaderLabels([str(c) for c in td.columns])
@@ -429,13 +395,15 @@ class MainWindow(QWidget):
                 self.result_table.setItem(ri, ci, item)
         self.result_table.resizeColumnsToContents()
         self.result_table.setSortingEnabled(True)
+        total = len(df)
+        if total > MAX_TABLE_ROWS:
+            self.log(f"(表格显示前 {MAX_TABLE_ROWS} 行，共 {total} 行)")
 
     def open_mapping(self):
         if not self.current_files:
             self.log("请先选择文件夹")
             return
         try:
-            import pandas as pd
             f0 = self.current_files[0]
             if f0.endswith(".csv"):
                 df = pd.read_csv(f0, dtype=str, nrows=5)
@@ -444,10 +412,9 @@ class MainWindow(QWidget):
         except Exception as e:
             self.log(f"读取字段失败: {e}")
             return
-        dlg = MappingWindow(list(df.columns))
-        if dlg.exec():
-            self.refresh_templates()
-            self.log("字段映射模板已保存")
+        MappingWindow(list(df.columns)).exec()
+        self.refresh_templates()
+        self.log("字段映射模板已保存")
 
     def refresh_templates(self):
         self.template_box.clear()
@@ -456,6 +423,102 @@ class MainWindow(QWidget):
 
     def log(self, msg):
         self.log_box.append(str(msg))
+
+    # ══════════════════════════════════════════════
+    # 分析方法（在后台线程中执行）
+    # ══════════════════════════════════════════════
+
+    def run_call_summary(self):
+        if not self._need_data():
+            return
+        s = get_data_summary(self.merged_df)
+        user_contacts = get_top_contacts_by_user(self.merged_df, top_n=10)
+        lines = ["══ 数据概览 ══"]
+        for k, v in s.items():
+            lines.append(f"  {k}: {v}")
+        rows = []
+        if user_contacts:
+            lines.append("\n══ 各方号码高频联系人 ══")
+            for user, tbl in user_contacts.items():
+                lines.append(f"\n【{user}】")
+                for _, r in tbl.iterrows():
+                    lines.append(f"  → {r['对方号码']}   {int(r['次数'])}次")
+                tbl_copy = tbl.copy()
+                tbl_copy.insert(0, "本方号码", user)
+                rows.append(tbl_copy)
+        self.log("\n".join(lines))
+        all_data = pd.concat(rows, ignore_index=True) if rows else pd.DataFrame()
+        self.show_call_table(all_data)
+        self._save_excel(all_data, "01_高频联系人_按号码.xlsx")
+
+    def run_call_top(self):
+        if not self._need_data():
+            return
+        data = get_top_contacts_by_user(self.merged_df, top_n=20)
+        if not data:
+            self.log("无可分析的联系人数据")
+            return
+        lines = ["══ 高频联系人明细 TOP20 ══"]
+        rows = []
+        for user, tbl in data.items():
+            lines.append(f"\n【{user}】 共联系 {len(tbl)} 个号码")
+            for _, r in tbl.iterrows():
+                lines.append(f"  {r['对方号码']}   {int(r['次数'])}次")
+            tbl_copy = tbl.copy()
+            tbl_copy.insert(0, "本方号码", user)
+            rows.append(tbl_copy)
+        self.log("\n".join(lines))
+        all_data = pd.concat(rows, ignore_index=True) if rows else pd.DataFrame()
+        self.show_call_table(all_data)
+        self._save_excel(all_data, "02_高频联系人_明细.xlsx")
+
+    def run_call_night(self):
+        if not self._need_data():
+            return
+        night_by_user = get_night_calls_by_user(self.merged_df)
+        summary = get_night_calls_summary(self.merged_df)
+        if not night_by_user:
+            self.log("无深夜通话记录 (00:00-05:59)")
+            return
+        lines = ["══ 深夜通话分析 (00:00-05:59) ══"]
+        rows = []
+        for user, tbl in night_by_user.items():
+            cnt = len(tbl)
+            lines.append(f"\n【{user}】 深夜通话 {cnt} 条")
+            for _, r in tbl.head(20).iterrows():
+                lines.append(f"  {r['对方号码']}  {r.get('开始时间','')}")
+            tbl_copy = tbl.copy()
+            tbl_copy.insert(0, "本方号码", user)
+            rows.append(tbl_copy)
+        self.log("\n".join(lines))
+        all_data = pd.concat(rows, ignore_index=True) if rows else pd.DataFrame()
+        self.show_call_table(all_data)
+        self._save_excel(all_data, "03_深夜通话_按号码.xlsx")
+        if not summary.empty:
+            self._save_excel(summary, "03_深夜通话_汇总.xlsx")
+
+    def run_call_risk(self):
+        if not self._need_data():
+            return
+        risk_by_user = get_risk_by_user(self.merged_df)
+        if not risk_by_user:
+            self.log("未发现达到阈值的风险关系")
+            return
+        lines = ["══ 风险关系分析 ══"]
+        rows = []
+        for user, tbl in risk_by_user.items():
+            lines.append(f"\n【{user}】")
+            for _, r in tbl.head(15).iterrows():
+                lines.append(
+                    f"  → {r['对方号码']}  "
+                    f"风险分{int(r['风险分'])} "
+                    f"(总{int(r['总次数'])}/深夜{int(r['深夜次数'])}/短{int(r['短通话次数'])})"
+                )
+            rows.append(tbl)
+        self.log("\n".join(lines))
+        all_data = pd.concat(rows, ignore_index=True) if rows else pd.DataFrame()
+        self.show_call_table(all_data)
+        self._save_excel(all_data, "04_风险关系_按号码.xlsx")
 
     # ══════════════════════════════════════════════
     # 样式
@@ -524,6 +587,10 @@ class MainWindow(QWidget):
             QPushButton:hover {
                 background: #f3f4f6;
             }
+            QPushButton:disabled {
+                background: #e5e7eb;
+                color: #9ca3af;
+            }
             QPushButton#primaryButton {
                 background: #2563eb;
                 border-color: #2563eb;
@@ -532,6 +599,11 @@ class MainWindow(QWidget):
             }
             QPushButton#primaryButton:hover {
                 background: #1d4ed8;
+            }
+            QPushButton#primaryButton:disabled {
+                background: #93c5fd;
+                border-color: #93c5fd;
+                color: #fff;
             }
             QComboBox, QListWidget, QTextEdit, QTableWidget, QSpinBox, QLineEdit {
                 background: #fff;

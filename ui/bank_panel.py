@@ -3,8 +3,8 @@
 """
 
 import os
+import threading
 
-import pandas as pd
 from ui.qt_compat import (
     Qt,
     QCheckBox,
@@ -37,18 +37,43 @@ from core.bank_analyzer import (
     load_bank_data,
 )
 
+MAX_TABLE_ROWS = 500
+
 
 class BankPanel(QWidget):
     def __init__(self):
         super().__init__()
         self.df = None
         self.current_result = None
+        self.output_dir = "银行交易分析结果"
+        self._busy = False
+
+        # 收集所有操作按钮
+        self._action_buttons = []
         self.init_ui()
+
+    def _set_busy(self, busy):
+        self._busy = busy
+        self.setCursor(Qt.WaitCursor if busy else Qt.ArrowCursor)
+        for btn in self._action_buttons:
+            btn.setEnabled(not busy)
+
+    def _run_async(self, func, *args, **kwargs):
+        if self._busy:
+            return
+        self._set_busy(True)
+        def wrapper():
+            try:
+                func(*args, **kwargs)
+            except Exception as e:
+                self.log(f"❌ 错误: {e}")
+            finally:
+                self._set_busy(False)
+        threading.Thread(target=wrapper, daemon=True).start()
 
     def init_ui(self):
         root = QHBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
-
         splitter = QSplitter(Qt.Horizontal)
         splitter.addWidget(self._build_control())
         splitter.addWidget(self._build_output())
@@ -85,14 +110,11 @@ class BankPanel(QWidget):
         out_row.addWidget(self.out_label, 1)
         out_row.addWidget(btn_out)
         fg.addLayout(out_row)
-        self.output_dir = "银行交易分析结果"
         btn_out.clicked.connect(self.select_output_dir)
 
         # ── 筛选参数 ──
         filter_group = QGroupBox("筛选条件")
         fl = QVBoxLayout(filter_group)
-
-        # 敏感金额
         fl.addWidget(QLabel("敏感金额:"))
         amt_row = QHBoxLayout()
         self.spin_base = QSpinBox()
@@ -109,7 +131,6 @@ class BankPanel(QWidget):
         amt_row.addStretch()
         fl.addLayout(amt_row)
 
-        # 高频阈值
         hl = QHBoxLayout()
         hl.addWidget(QLabel("高频阈值(>"))
         self.spin_freq = QSpinBox()
@@ -118,8 +139,8 @@ class BankPanel(QWidget):
         hl.addWidget(self.spin_freq)
         hl.addWidget(QLabel("条)"))
         hl.addStretch()
+        fl.addLayout(hl)
 
-        # 深夜时间
         hl2 = QHBoxLayout()
         hl2.addWidget(QLabel("深夜:"))
         self.spin_night_start = QSpinBox()
@@ -133,34 +154,27 @@ class BankPanel(QWidget):
         hl2.addWidget(self.spin_night_end)
         hl2.addWidget(QLabel(":00"))
         hl2.addStretch()
-
-        fl.addLayout(hl)
         fl.addLayout(hl2)
 
         # ── 筛选按钮 ──
         act_group = QGroupBox("执行分析")
         al = QVBoxLayout(act_group)
-        self.btn_quick = QPushButton("快进快出筛选")
-        self.btn_quick.setObjectName("primaryButton")
-        self.btn_sensitive = QPushButton("敏感金额筛选")
-        self.btn_night = QPushButton("深夜交易筛选")
-        self.btn_atm = QPushButton("ATM取款")
-        self.btn_delivery = QPushButton("配送交易")
-        self.btn_risk = QPushButton("风险评分汇总")
-        self.btn_risk.setObjectName("primaryButton")
-        self.btn_export = QPushButton("导出人员名单")
-
-        for b in [self.btn_quick, self.btn_sensitive, self.btn_night,
-                   self.btn_atm, self.btn_delivery, self.btn_risk, self.btn_export]:
-            al.addWidget(b)
-
-        self.btn_quick.clicked.connect(self.run_quick_in_out)
-        self.btn_sensitive.clicked.connect(self.run_sensitive)
-        self.btn_night.clicked.connect(self.run_night)
-        self.btn_atm.clicked.connect(self.run_atm)
-        self.btn_delivery.clicked.connect(self.run_delivery)
-        self.btn_risk.clicked.connect(self.run_risk_score)
-        self.btn_export.clicked.connect(self.run_export_persons)
+        btns = [
+            ("快进快出筛选", self.run_quick_in_out, True),
+            ("敏感金额筛选", self.run_sensitive, False),
+            ("深夜交易筛选", self.run_night, False),
+            ("ATM取款", self.run_atm, False),
+            ("配送交易", self.run_delivery, False),
+            ("风险评分汇总", self.run_risk_score, True),
+            ("导出人员名单", self.run_export_persons, False),
+        ]
+        for label, handler, primary in btns:
+            btn = QPushButton(label)
+            if primary:
+                btn.setObjectName("primaryButton")
+            btn.clicked.connect(lambda checked, h=handler: self._run_async(h))
+            self._action_buttons.append(btn)
+            al.addWidget(btn)
 
         layout.addWidget(file_group)
         layout.addWidget(filter_group)
@@ -174,16 +188,13 @@ class BankPanel(QWidget):
         layout = QVBoxLayout(panel)
         layout.setContentsMargins(14, 14, 14, 14)
         layout.setSpacing(12)
-
         self.table = QTableWidget()
         self.table.setAlternatingRowColors(True)
         self.table.setSortingEnabled(True)
-
         self.log_box = QTextEdit()
         self.log_box.setReadOnly(True)
         self.log_box.setPlaceholderText("分析结果会显示在这里")
         self.log_box.setMaximumHeight(160)
-
         layout.addWidget(self.table, 1)
         layout.addWidget(self.log_box)
         return panel
@@ -221,7 +232,6 @@ class BankPanel(QWidget):
         return True
 
     def _save_excel(self, df, filename):
-        """保存 DataFrame 为 Excel 到输出目录。"""
         if df is None or df.empty:
             return
         os.makedirs(self.output_dir, exist_ok=True)
@@ -236,6 +246,37 @@ class BankPanel(QWidget):
         self.current_result = df
         if filename:
             self._save_excel(df, filename)
+
+    def show_table(self, df):
+        self.table.setSortingEnabled(False)
+        self.table.clear()
+        if df is None or df.empty:
+            self.table.setRowCount(0)
+            self.table.setColumnCount(0)
+            self.table.setSortingEnabled(True)
+            return
+        show = df.head(MAX_TABLE_ROWS)
+        td = show.fillna("").copy()
+        self.table.setRowCount(len(td))
+        self.table.setColumnCount(len(td.columns))
+        self.table.setHorizontalHeaderLabels([str(c) for c in td.columns])
+        for ri, (_, row) in enumerate(td.iterrows()):
+            for ci, val in enumerate(row):
+                item = QTableWidgetItem(str(val))
+                item.setFlags(item.flags() & ~Qt.ItemIsEditable)
+                self.table.setItem(ri, ci, item)
+        self.table.resizeColumnsToContents()
+        self.table.setSortingEnabled(True)
+        total = len(df)
+        if total > MAX_TABLE_ROWS:
+            self.log(f"(表格显示前 {MAX_TABLE_ROWS} 行，共 {total} 行)")
+
+    def log(self, msg):
+        self.log_box.append(str(msg))
+
+    # ══════════════════════════════════════════════
+    # 筛选方法
+    # ══════════════════════════════════════════════
 
     def run_quick_in_out(self):
         if not self._ensure_data():
@@ -295,30 +336,3 @@ class BankPanel(QWidget):
         self.log(f"人员名单已导出: {path}")
         self.log(f"共 {len(summary)} 人")
         self.show_table(summary)
-
-    # ══════════════════════════════════════════════
-    # 工具
-    # ══════════════════════════════════════════════
-
-    def show_table(self, df):
-        self.table.setSortingEnabled(False)
-        self.table.clear()
-        if df is None or df.empty:
-            self.table.setRowCount(0)
-            self.table.setColumnCount(0)
-            self.table.setSortingEnabled(True)
-            return
-        td = df.fillna("").copy()
-        self.table.setRowCount(len(td))
-        self.table.setColumnCount(len(td.columns))
-        self.table.setHorizontalHeaderLabels([str(c) for c in td.columns])
-        for ri, (_, row) in enumerate(td.iterrows()):
-            for ci, val in enumerate(row):
-                item = QTableWidgetItem(str(val))
-                item.setFlags(item.flags() & ~Qt.ItemIsEditable)
-                self.table.setItem(ri, ci, item)
-        self.table.resizeColumnsToContents()
-        self.table.setSortingEnabled(True)
-
-    def log(self, msg):
-        self.log_box.append(str(msg))
