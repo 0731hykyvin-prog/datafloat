@@ -74,6 +74,20 @@ class BankPanel(QWidget):
         fg.addWidget(self.lbl_file)
         fg.addWidget(btn_file)
 
+        # 输出目录
+        fg.addWidget(QLabel("输出目录"))
+        out_row = QHBoxLayout()
+        self.out_label = QLabel("银行交易分析结果")
+        self.out_label.setObjectName("pathLabel")
+        self.out_label.setWordWrap(True)
+        btn_out = QPushButton("选择")
+        btn_out.setFixedWidth(60)
+        out_row.addWidget(self.out_label, 1)
+        out_row.addWidget(btn_out)
+        fg.addLayout(out_row)
+        self.output_dir = "银行交易分析结果"
+        btn_out.clicked.connect(self.select_output_dir)
+
         # ── 筛选参数 ──
         filter_group = QGroupBox("筛选条件")
         fl = QVBoxLayout(filter_group)
@@ -192,6 +206,14 @@ class BankPanel(QWidget):
         except Exception as e:
             self.log(f"加载失败: {e}")
 
+    def select_output_dir(self):
+        folder = QFileDialog.getExistingDirectory(self, "选择输出目录")
+        if not folder:
+            return
+        self.output_dir = folder
+        self.out_label.setText(folder)
+        self.log(f"输出目录: {folder}")
+
     def _ensure_data(self):
         if self.df is None or self.df.empty:
             self.log("请先选择数据文件")
@@ -256,7 +278,7 @@ class BankPanel(QWidget):
         if not self._ensure_data():
             return
         src = self.current_result if self.current_result is not None else self.df
-        path, summary = export_person_summary(src)
+        path, summary = export_person_summary(src, self.output_dir)
         self.log(f"人员名单已导出: {path}")
         self.log(f"共 {len(summary)} 人")
         self.show_table(summary)

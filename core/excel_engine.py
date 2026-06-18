@@ -15,10 +15,12 @@ def _get_output_dir():
     return os.getcwd()
 
 
-def merge_excel_files(file_list, output_filename="merged.xlsx", mapping=None):
+def merge_excel_files(file_list, output_filename="merged.xlsx", mapping=None, output_dir=None):
     """
     合并多个 Excel / CSV 文件，返回统一的 DataFrame 并写出 Excel。
 
+    参数:
+        output_dir: 输出目录，为 None 时自动选择（exe目录 或 当前目录）
     返回:
         dict 或 None — 包含 "df", "output_file", "logs" 三个键；
         logs 是字符串列表，调用方可写入 UI 日志框。
@@ -114,7 +116,9 @@ def merge_excel_files(file_list, output_filename="merged.xlsx", mapping=None):
     result = pd.concat(dfs, ignore_index=True)
 
     # ── 写出 Excel ──
-    output_path = os.path.join(_get_output_dir(), output_filename)
+    out_dir = output_dir if output_dir else _get_output_dir()
+    os.makedirs(out_dir, exist_ok=True)
+    output_path = os.path.join(out_dir, output_filename)
     result.to_excel(output_path, index=False)
 
     logs.append("")

@@ -149,6 +149,21 @@ class MainWindow(QWidget):
         pl.addWidget(QLabel("数据模板"))
         self.template_box = QComboBox()
         btn_map = QPushButton("字段映射")
+
+        # 输出目录
+        pl.addWidget(QLabel("输出目录"))
+        out_row = QHBoxLayout()
+        self.output_label = QLabel("程序默认目录")
+        self.output_label.setObjectName("pathLabel")
+        self.output_label.setWordWrap(True)
+        btn_out = QPushButton("选择")
+        btn_out.setFixedWidth(60)
+        out_row.addWidget(self.output_label, 1)
+        out_row.addWidget(btn_out)
+        pl.addLayout(out_row)
+        self.output_dir = None
+        btn_out.clicked.connect(self.select_output_dir)
+
         btn_merge = QPushButton("合并处理")
         btn_merge.setObjectName("primaryButton")
         btn_direct = QPushButton("直接处理当前文件")
@@ -239,6 +254,14 @@ class MainWindow(QWidget):
         self.status_badge.setText("已导入")
         self.log(f"直接选择了 {len(self.current_files)} 个文件")
 
+    def select_output_dir(self):
+        folder = QFileDialog.getExistingDirectory(self, "选择输出目录")
+        if not folder:
+            return
+        self.output_dir = folder
+        self.output_label.setText(folder)
+        self.log(f"输出目录: {folder}")
+
     def preview_file(self, item):
         idx = self.file_list.row(item)
         if 0 <= idx < len(self.current_files):
@@ -263,11 +286,11 @@ class MainWindow(QWidget):
                 return
             target = [self.current_files[idx]]
             self.log(f"直接处理: {os.path.basename(target[0])}")
-            result = merge_excel_files(target, "processed.xlsx", mapping)
+            result = merge_excel_files(target, "processed.xlsx", mapping, self.output_dir)
         else:
             # 合并处理：所有文件
             self.log(f"合并处理 {len(self.current_files)} 个文件 ...")
-            result = merge_excel_files(self.current_files, "merged.xlsx", mapping)
+            result = merge_excel_files(self.current_files, "merged.xlsx", mapping, self.output_dir)
 
         if not result or result.get("df") is None or result["df"].empty:
             self.log("处理失败：没有可合并的数据")
