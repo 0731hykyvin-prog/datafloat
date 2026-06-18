@@ -6,6 +6,8 @@ TAB 2: 银行交易分析（流水快进快出+风险评分）
 
 import os
 
+import pandas as pd
+
 from ui.qt_compat import (
     Qt,
     QComboBox,
@@ -331,20 +333,35 @@ class MainWindow(QWidget):
             return False
         return True
 
+    def _get_out_dir(self):
+        """获取输出目录，优先用户选择，否则程序默认。"""
+        return self.output_dir if self.output_dir else os.getcwd()
+
+    def _save_excel(self, df, filename):
+        """保存 DataFrame 为 Excel 到输出目录。"""
+        if df is None or df.empty:
+            return
+        out_dir = self._get_out_dir()
+        os.makedirs(out_dir, exist_ok=True)
+        path = os.path.join(out_dir, filename)
+        df.to_excel(path, index=False)
+        self.log(f"📁 已导出: {path}")
+
     def run_call_summary(self):
         if not self._need_data():
             return
         s = get_data_summary(self.merged_df)
+        top = get_global_top_contacts(self.merged_df, top_n=5)
         lines = ["数据概览"]
         for k, v in s.items():
             lines.append(f"  {k}: {v}")
-        top = get_global_top_contacts(self.merged_df, top_n=5)
         if not top.empty:
             lines.append("\n高频对方号码 TOP 5:")
             for _, r in top.iterrows():
                 lines.append(f"  {r['对方号码']}  {int(r['次数'])}次")
         self.log("\n".join(lines))
         self.show_call_table(top)
+        self._save_excel(top, "01_高频联系人TOP5.xlsx")
 
     def run_call_top(self):
         if not self._need_data():
@@ -355,12 +372,17 @@ class MainWindow(QWidget):
             self.log("无可分析的联系人数据")
             return
         lines = ["分本方号码高频联系人"]
+        rows = []
         for user, tbl in data.items():
             lines.append(f"\n{user}")
             for _, r in tbl.iterrows():
                 lines.append(f"  {r['对方号码']}  {int(r['次数'])}次")
+            rows.append(tbl)
         self.log("\n".join(lines))
         self.show_call_table(gt)
+        # 分用户导出
+        all_top = pd.concat(rows, ignore_index=True) if rows else pd.DataFrame()
+        self._save_excel(all_top, "02_分用户高频联系人.xlsx")
 
     def run_call_night(self):
         if not self._need_data():
@@ -368,6 +390,7 @@ class MainWindow(QWidget):
         tbl = get_night_calls(self.merged_df)
         self.log(f"深夜通话: 共 {len(tbl)} 条 (00:00-05:59)")
         self.show_call_table(tbl)
+        self._save_excel(tbl, "03_深夜通话明细.xlsx")
 
     def run_call_risk(self):
         if not self._need_data():
@@ -385,6 +408,7 @@ class MainWindow(QWidget):
             )
         self.log("\n".join(lines))
         self.show_call_table(tbl)
+        self._save_excel(tbl, "04_风险关系.xlsx")
 
     def show_call_table(self, df):
         self.result_table.setSortingEnabled(False)
