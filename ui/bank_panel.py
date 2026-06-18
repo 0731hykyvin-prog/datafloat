@@ -220,18 +220,29 @@ class BankPanel(QWidget):
             return False
         return True
 
-    def _show_result(self, df, logs):
+    def _save_excel(self, df, filename):
+        """保存 DataFrame 为 Excel 到输出目录。"""
+        if df is None or df.empty:
+            return
+        os.makedirs(self.output_dir, exist_ok=True)
+        path = os.path.join(self.output_dir, filename)
+        df.to_excel(path, index=False)
+        self.log(f"📁 已导出: {path}")
+
+    def _show_result(self, df, logs, filename=None):
         for line in logs:
             self.log(line)
         self.show_table(df)
         self.current_result = df
+        if filename:
+            self._save_excel(df, filename)
 
     def run_quick_in_out(self):
         if not self._ensure_data():
             return
         threshold = self.spin_freq.value()
         result, logs = filter_quick_in_out(self.df, min_hits=threshold)
-        self._show_result(result, logs)
+        self._show_result(result, logs, "B01_快进快出筛选.xlsx")
 
     def run_sensitive(self):
         if not self._ensure_data():
@@ -240,7 +251,7 @@ class BankPanel(QWidget):
         step = self.spin_step.value()
         src = self.current_result if self.current_result is not None else self.df
         result, logs = filter_sensitive_amount(src, base=base, step=step)
-        self._show_result(result, logs)
+        self._show_result(result, logs, "B02_敏感金额筛选.xlsx")
 
     def run_night(self):
         if not self._ensure_data():
@@ -249,21 +260,21 @@ class BankPanel(QWidget):
         eh = self.spin_night_end.value()
         src = self.current_result if self.current_result is not None else self.df
         result, logs = filter_night_trades(src, start_h=sh, end_h=eh)
-        self._show_result(result, logs)
+        self._show_result(result, logs, "B03_深夜交易明细.xlsx")
 
     def run_atm(self):
         if not self._ensure_data():
             return
         src = self.current_result if self.current_result is not None else self.df
         result, logs = filter_atm_withdrawals(src)
-        self._show_result(result, logs)
+        self._show_result(result, logs, "B04_ATM取款明细.xlsx")
 
     def run_delivery(self):
         if not self._ensure_data():
             return
         src = self.current_result if self.current_result is not None else self.df
         result, logs = filter_delivery_trades(src)
-        self._show_result(result, logs)
+        self._show_result(result, logs, "B05_配送交易明细.xlsx")
 
     def run_risk_score(self):
         if not self._ensure_data():
@@ -273,6 +284,8 @@ class BankPanel(QWidget):
         self.log(f"风险评分: {len(acc_stats)} 账户, {len(person_stats)} 人")
         self.show_table(person_stats)
         self.current_result = person_stats
+        self._save_excel(acc_stats, "B06_账户风险评分.xlsx")
+        self._save_excel(person_stats, "B07_人员风险评分汇总.xlsx")
 
     def run_export_persons(self):
         if not self._ensure_data():
