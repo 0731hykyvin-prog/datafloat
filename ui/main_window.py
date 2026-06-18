@@ -149,13 +149,16 @@ class MainWindow(QWidget):
         pl.addWidget(QLabel("数据模板"))
         self.template_box = QComboBox()
         btn_map = QPushButton("字段映射")
-        btn_run = QPushButton("开始合并处理")
-        btn_run.setObjectName("primaryButton")
+        btn_merge = QPushButton("合并处理")
+        btn_merge.setObjectName("primaryButton")
+        btn_direct = QPushButton("直接处理当前文件")
         pl.addWidget(self.template_box)
         pl.addWidget(btn_map)
-        pl.addWidget(btn_run)
+        pl.addWidget(btn_merge)
+        pl.addWidget(btn_direct)
         btn_map.clicked.connect(self.open_mapping)
-        btn_run.clicked.connect(self.start_process)
+        btn_merge.clicked.connect(lambda: self.start_process(mode="merge"))
+        btn_direct.clicked.connect(lambda: self.start_process(mode="direct"))
 
         layout.addWidget(src, 3)
         layout.addWidget(proc)
@@ -241,7 +244,7 @@ class MainWindow(QWidget):
         if 0 <= idx < len(self.current_files):
             PreviewWindow(self.current_files[idx]).exec()
 
-    def start_process(self):
+    def start_process(self, mode="merge"):
         if not self.current_files:
             self.log("请先选择文件夹或文件")
             return
@@ -252,7 +255,20 @@ class MainWindow(QWidget):
             if mapping:
                 self.log(f"加载模板: {tmpl}")
 
-        result = merge_excel_files(self.current_files, "merged.xlsx", mapping)
+        if mode == "direct":
+            # 直接处理：当前列表选中的文件
+            idx = self.file_list.currentRow()
+            if idx < 0 or idx >= len(self.current_files):
+                self.log("请在文件列表中点击选中要直接处理的文件")
+                return
+            target = [self.current_files[idx]]
+            self.log(f"直接处理: {os.path.basename(target[0])}")
+            result = merge_excel_files(target, "processed.xlsx", mapping)
+        else:
+            # 合并处理：所有文件
+            self.log(f"合并处理 {len(self.current_files)} 个文件 ...")
+            result = merge_excel_files(self.current_files, "merged.xlsx", mapping)
+
         if not result or result.get("df") is None or result["df"].empty:
             self.log("处理失败：没有可合并的数据")
             return
