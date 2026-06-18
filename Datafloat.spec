@@ -1,6 +1,7 @@
 # -*- mode: python ; coding: utf-8 -*-
 
 import os
+import sys
 from PyInstaller.utils.hooks import collect_data_files
 
 datas = [("templates", "templates")]
@@ -13,10 +14,19 @@ hiddenimports = [
     "packaging.specifiers",
 ]
 
+# ── 收集 Python 运行时 DLL ───────────────────────────
+# python39.dll 及其依赖的 VC++ 运行时必须打进文件夹
+python_dir = os.path.dirname(sys.executable)
+binaries = []
+for dll_name in ["python39.dll", "vcruntime140.dll", "vcruntime140_1.dll"]:
+    src = os.path.join(python_dir, dll_name)
+    if os.path.exists(src):
+        binaries.append((src, "."))
+
 a = Analysis(
     ["main.py"],
     pathex=[],
-    binaries=[],
+    binaries=binaries,
     datas=datas,
     hiddenimports=hiddenimports,
     hookspath=[],
@@ -42,6 +52,7 @@ a = Analysis(
 
 pyz = PYZ(a.pure)
 
+# 过滤无用 DLL
 cleaned_binaries = [
     t for t in a.binaries
     if "libpq" not in t[0].lower()
