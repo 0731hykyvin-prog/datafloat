@@ -2,7 +2,7 @@
 
 import os
 import sys
-from PyInstaller.utils.hooks import collect_data_files
+from PyInstaller.utils.hooks import collect_data_files, collect_submodules
 
 datas = [("templates", "templates")]
 
@@ -12,6 +12,33 @@ hiddenimports = [
     "packaging",
     "packaging.version",
     "packaging.specifiers",
+    # numpy 内部模块（pandas 依赖）
+    "numpy",
+    "numpy._core",
+    "numpy.core",
+    "numpy.core._dtype_ctypes",
+    "numpy.core._internal",
+    "numpy.core.multiarray",
+    "numpy.core.numeric",
+    "numpy.core.umath",
+    "numpy.lib",
+    "numpy.lib.format",
+    "numpy.random",
+    "numpy.random._common",
+    "numpy.random._generator",
+    "numpy.random._mt19937",
+    "numpy.random._pcg64",
+    "numpy.random._philox",
+    "numpy.random._sfc64",
+    "numpy.random.bit_generator",
+    "numpy.random.mtrand",
+    "numpy.linalg",
+    "numpy.linalg.lapack_lite",
+    # Python 标准库可能缺失的
+    "secrets",
+    "hashlib",
+    "hmac",
+    "binascii",
 ]
 
 # ── 收集 Python 运行时 DLL ───────────────────────────
