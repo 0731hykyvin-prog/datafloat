@@ -5,8 +5,8 @@
 import os
 
 import pandas as pd
-from PySide2.QtCore import Qt
-from PySide2.QtWidgets import (
+from ui.qt_compat import (
+    Qt,
     QCheckBox,
     QComboBox,
     QFileDialog,

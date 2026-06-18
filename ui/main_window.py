@@ -6,8 +6,8 @@ TAB 2: 银行交易分析（流水快进快出+风险评分）
 
 import os
 
-from PySide2.QtCore import Qt
-from PySide2.QtWidgets import (
+from ui.qt_compat import (
+    Qt,
     QComboBox,
     QFileDialog,
     QFrame,
