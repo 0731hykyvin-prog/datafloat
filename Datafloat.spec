@@ -39,6 +39,19 @@ hiddenimports = [
     "hashlib",
     "hmac",
     "binascii",
+    # pdfplumber（PDF 解析）
+    "pdfplumber",
+    "pdfminer",
+    "pdfminer.pdfparser",
+    "pdfminer.pdfdocument",
+    "pdfminer.pdfpage",
+    "pdfminer.pdfinterp",
+    "pdfminer.converter",
+    "pdfminer.layout",
+    "pdfminer.cmapdb",
+    "pdfminer.encodingdb",
+    "pdfminer.glyphlist",
+    "pdfminer.utils",
 ]
 
 # ── 收集 Python 运行时 DLL ───────────────────────────
