@@ -134,7 +134,7 @@ class BankPanel(QWidget):
         l.setContentsMargins(0, 0, 0, 0)
         ctrl = QFrame()
         ctrl.setObjectName("sidePanel")
-        ctrl.setFixedWidth(240)
+        ctrl.setMinimumWidth(260)
         cl = QVBoxLayout(ctrl)
         cl.setContentsMargins(12, 12, 12, 12)
         cl.setSpacing(10)
