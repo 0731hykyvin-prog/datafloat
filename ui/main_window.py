@@ -43,9 +43,10 @@ from core.excel_engine import merge_excel_files
 from core.file_loader import scan_files
 from core.template_manager import TemplateManager
 from ui.bank_panel import BankPanel
+from ui.bank_tools_panel import BankToolsPanel
 from ui.mapping_window import MappingWindow
 from ui.preview_window import PreviewWindow
-from ui.telecom_panel import TelecomPanel
+from ui.video_panel import VideoPanel
 
 MAX_TABLE_ROWS = 500  # 表格最多显示行数，保证UI流畅
 
@@ -106,7 +107,8 @@ class MainWindow(QWidget):
         self.tabs = QTabWidget()
         self.tabs.addTab(self._build_call_tab(), "📞 话单分析")
         self.tabs.addTab(BankPanel(), "🏦 银行交易分析")
-        self.tabs.addTab(TelecomPanel(), "📄 电信话单清洗")
+        self.tabs.addTab(BankToolsPanel(), "🔧 银行工具集")
+        self.tabs.addTab(VideoPanel(), "📹 视频布控")
         root.addWidget(self.tabs, 1)
 
     def _build_header(self):
