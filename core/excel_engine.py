@@ -91,13 +91,16 @@ def merge_excel_files(file_list, output_filename="merged.xlsx", mapping=None, ou
             for k, v in report.get("field_status", {}).items():
                 logs.append(f"    {k}: {v}")
 
-            # ── 7. 统一为标准字段结构（始终执行） ──
-            standard_columns = [
-                "本方号码", "对方号码", "开始时间", "结束时间",
-                "通话时长", "呼叫类型", "小区号", "基站号",
-                "IMSI", "IMEI",
-            ]
-            df = df.reindex(columns=[c for c in standard_columns if c in df.columns])
+            # ── 7. 统一为标准字段结构（仅在有映射时）──
+            if mapping:
+                standard_columns = [
+                    "本方号码", "对方号码", "开始时间", "结束时间",
+                    "通话时长", "呼叫类型", "小区号", "基站号",
+                    "IMSI", "IMEI",
+                ]
+                existing = [c for c in standard_columns if c in df.columns]
+                if existing:
+                    df = df.reindex(columns=existing)
 
             # ── 8. 标记来源文件 ──
             df["来源文件"] = os.path.basename(file)

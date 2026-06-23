@@ -44,7 +44,6 @@ from core.file_loader import scan_files
 from core.template_manager import TemplateManager
 from ui.bank_panel import BankPanel
 from ui.mapping_window import MappingWindow
-from ui.preview_window import PreviewWindow
 from ui.video_panel import VideoPanel
 
 MAX_TABLE_ROWS = 500  # 表格最多显示行数，保证UI流畅
@@ -151,58 +150,63 @@ class MainWindow(QWidget):
         layout.setContentsMargins(14, 14, 14, 14)
         layout.setSpacing(10)
 
-        # 数据源
-        src = QGroupBox("数据源")
-        sl = QVBoxLayout(src)
-        self.folder_label = QLabel("未选择文件")
+        # ── 导入（一键：自动识别文件夹/文件）──
+        imp = QGroupBox("数据导入")
+        il = QVBoxLayout(imp)
+        self.folder_label = QLabel("未导入数据")
         self.folder_label.setObjectName("pathLabel")
         self.folder_label.setWordWrap(True)
-        btn_folder = QPushButton("选择话单文件夹")
-        btn_folder.setObjectName("primaryButton")
-        btn_file = QPushButton("选择话单文件")
-        btn_file.setObjectName("primaryButton")
+        btn_import = QPushButton("📂 导入数据（文件夹/文件）")
+        btn_import.setObjectName("primaryButton")
+        btn_import.clicked.connect(self.select_data_source)
         self.file_list = QListWidget()
         self.file_list.setAlternatingRowColors(True)
-        sl.addWidget(self.folder_label)
-        sl.addWidget(btn_folder)
-        sl.addWidget(btn_file)
-        sl.addWidget(QLabel("已选文件"))
-        sl.addWidget(self.file_list, 1)
-        btn_folder.clicked.connect(self.select_folder)
-        btn_file.clicked.connect(self.select_files)
-        self.file_list.itemDoubleClicked.connect(self.preview_file)
+        self.file_list.setMaximumHeight(100)
+        self.file_list.itemClicked.connect(self._on_file_clicked)
+        il.addWidget(self.folder_label)
+        il.addWidget(btn_import)
+        il.addWidget(QLabel("已导入文件（点击可预览）"))
+        il.addWidget(self.file_list)
 
-        # 处理
-        proc = QGroupBox("处理与分析")
-        pl = QVBoxLayout(proc)
-        pl.addWidget(QLabel("数据模板"))
+        # ── 字段映射 ──
+        mapping = QGroupBox("字段映射")
+        ml = QVBoxLayout(mapping)
+        ml.addWidget(QLabel("数据模板"))
         self.template_box = QComboBox()
-        btn_map = QPushButton("字段映射")
-        pl.addWidget(QLabel("输出目录"))
-        out_row = QHBoxLayout()
+        self.template_box.currentTextChanged.connect(self._on_template_changed)
+        btn_map = QPushButton("创建/编辑映射模板")
+        btn_map.clicked.connect(self.open_mapping)
+        ml.addWidget(self.template_box)
+        ml.addWidget(btn_map)
+
+        # ── 输出 ──
+        out_grp = QGroupBox("输出设置")
+        ol = QVBoxLayout(out_grp)
         self.output_label = QLabel("程序默认目录")
         self.output_label.setObjectName("pathLabel")
         self.output_label.setWordWrap(True)
-        btn_out = QPushButton("选择")
-        btn_out.setFixedWidth(60)
+        out_row = QHBoxLayout()
         out_row.addWidget(self.output_label, 1)
-        out_row.addWidget(btn_out)
-        pl.addLayout(out_row)
-        self.output_dir = None
+        btn_out = QPushButton("选择")
+        btn_out.setFixedWidth(50)
         btn_out.clicked.connect(self.select_output_dir)
-        btn_merge = QPushButton("合并处理")
-        btn_merge.setObjectName("primaryButton")
-        btn_direct = QPushButton("直接处理当前文件")
-        pl.addWidget(self.template_box)
-        pl.addWidget(btn_map)
-        pl.addWidget(btn_merge)
-        pl.addWidget(btn_direct)
-        btn_map.clicked.connect(self.open_mapping)
-        btn_merge.clicked.connect(lambda: self._run_async(self.start_process, "merge"))
-        btn_direct.clicked.connect(lambda: self._run_async(self.start_process, "direct"))
+        out_row.addWidget(btn_out)
+        ol.addLayout(out_row)
+        self.output_dir = None
 
-        layout.addWidget(src, 3)
+        # ── 处理按钮 ──
+        proc = QGroupBox("处理")
+        pl = QVBoxLayout(proc)
+        self.btn_process = QPushButton("🚀 开始处理")
+        self.btn_process.setObjectName("primaryButton")
+        self.btn_process.clicked.connect(lambda: self._run_async(self.auto_process))
+        pl.addWidget(self.btn_process)
+
+        layout.addWidget(imp)
+        layout.addWidget(mapping)
+        layout.addWidget(out_grp)
         layout.addWidget(proc)
+        layout.addStretch()
         return panel
 
     # ══════════════════════════════════════════════
@@ -216,12 +220,26 @@ class MainWindow(QWidget):
         layout.setContentsMargins(14, 14, 14, 14)
         layout.setSpacing(10)
 
+        # 概览指标
         self.summary_grid = QGridLayout()
         summary_frame = QFrame()
         summary_frame.setObjectName("summaryPanel")
         summary_frame.setLayout(self.summary_grid)
         layout.addWidget(summary_frame)
 
+        # ── 数据预览区 ──
+        prev_grp = QGroupBox("📋 数据预览")
+        pvl = QVBoxLayout(prev_grp)
+        self.preview_label = QLabel("点击左侧文件列表中的文件名即可预览")
+        self.preview_label.setObjectName("pathLabel")
+        self.preview_table = QTableWidget()
+        self.preview_table.setAlternatingRowColors(True)
+        self.preview_table.setMaximumHeight(200)
+        pvl.addWidget(self.preview_label)
+        pvl.addWidget(self.preview_table)
+        layout.addWidget(prev_grp)
+
+        # 分析按钮
         bar = QHBoxLayout()
         self.btn_summary = QPushButton("刷新概览（高频联系人）")
         self.btn_top = QPushButton("高频联系人明细")
@@ -232,13 +250,14 @@ class MainWindow(QWidget):
         bar.addStretch()
         layout.addLayout(bar)
 
+        # 结果表格
         self.result_table = QTableWidget()
         self.result_table.setAlternatingRowColors(True)
         self.result_table.setSortingEnabled(True)
         self.log_box = QTextEdit()
         self.log_box.setReadOnly(True)
         self.log_box.setPlaceholderText("运行日志")
-        self.log_box.setMaximumHeight(140)
+        self.log_box.setMaximumHeight(120)
 
         layout.addWidget(self.result_table, 1)
         layout.addWidget(self.log_box)
@@ -253,33 +272,83 @@ class MainWindow(QWidget):
     # 话单操作
     # ══════════════════════════════════════════════
 
-    def select_folder(self):
-        folder = QFileDialog.getExistingDirectory(self, "选择话单文件夹")
-        if not folder:
-            return
-        self.folder_label.setText(folder)
-        self.file_list.clear()
-        self.current_files = scan_files(folder)
-        for fp in self.current_files:
-            self.file_list.addItem(os.path.basename(fp))
-        self.status_badge.setText("已导入")
-        self.log(f"扫描文件夹: {folder}")
-        self.log(f"找到 {len(self.current_files)} 个文件")
+    def select_data_source(self):
+        """一键导入：自动判断用户选了文件夹还是文件。"""
+        path = QFileDialog.getExistingDirectory(self, "选择话单文件夹（或取消后选文件）")
+        if path:
+            # 选了文件夹 → 扫描
+            self.folder_label.setText(path)
+            self.file_list.clear()
+            self.current_files = scan_files(path)
+            for fp in self.current_files:
+                self.file_list.addItem(os.path.basename(fp))
+            self.status_badge.setText(f"已导入 {len(self.current_files)} 个文件")
+            self.log(f"📁 文件夹: {path}  ({len(self.current_files)} 个文件)")
+        else:
+            # 取消文件夹 → 弹窗选文件
+            paths, _ = QFileDialog.getOpenFileNames(
+                self, "选择话单文件", "",
+                "表格文件 (*.xlsx *.xls *.xlsm *.csv);;所有文件 (*)")
+            if not paths:
+                return
+            self.folder_label.setText(f"已选择 {len(paths)} 个文件")
+            self.file_list.clear()
+            self.current_files = paths
+            for fp in self.current_files:
+                self.file_list.addItem(os.path.basename(fp))
+            self.status_badge.setText(f"已导入 {len(self.current_files)} 个文件")
+            self.log(f"📄 选择了 {len(self.current_files)} 个文件")
 
-    def select_files(self):
-        paths, _ = QFileDialog.getOpenFileNames(
-            self, "选择话单文件", "",
-            "表格文件 (*.xlsx *.xls *.xlsm *.csv);;所有文件 (*)"
-        )
-        if not paths:
+    def _on_file_clicked(self, item):
+        """点击文件列表 → 内嵌预览。"""
+        idx = self.file_list.row(item)
+        if 0 <= idx < len(self.current_files):
+            self._show_file_preview(self.current_files[idx])
+
+    def _on_template_changed(self, tmpl_name):
+        """切换模板时自动提示匹配字段。"""
+        if tmpl_name and tmpl_name != "自动识别":
+            mapping = self.template_manager.load_template(tmpl_name)
+            if mapping:
+                self.log(f"📋 模板 [{tmpl_name}]: {list(mapping.keys())}")
+
+    def _show_file_preview(self, file_path):
+        """内嵌预览文件前100行。"""
+        try:
+            ext = os.path.splitext(file_path)[1].lower()
+            if ext == ".csv":
+                df = pd.read_csv(file_path, dtype=str, nrows=100)
+            elif ext in {".xlsx", ".xlsm"}:
+                df = pd.read_excel(file_path, engine="openpyxl", dtype=str, nrows=100)
+            elif ext == ".xls":
+                df = pd.read_excel(file_path, engine="xlrd", dtype=str, nrows=100)
+            else:
+                self.preview_label.setText(f"不支持预览: {ext}")
+                return
+            self.preview_label.setText(f"📋 {os.path.basename(file_path)}  ({len(df)}行 × {len(df.columns)}列)")
+            self._fill_table(self.preview_table, df.head(50))
+        except Exception as e:
+            self.preview_label.setText(f"预览失败: {e}")
+
+    def _fill_table(self, table, df):
+        """通用填表方法。"""
+        table.setSortingEnabled(False)
+        table.clear()
+        if df is None or df.empty:
+            table.setRowCount(0); table.setColumnCount(0)
+            table.setSortingEnabled(True)
             return
-        self.folder_label.setText(f"已选择 {len(paths)} 个文件")
-        self.file_list.clear()
-        self.current_files = paths
-        for fp in self.current_files:
-            self.file_list.addItem(os.path.basename(fp))
-        self.status_badge.setText("已导入")
-        self.log(f"直接选择了 {len(self.current_files)} 个文件")
+        td = df.fillna("").copy()
+        table.setRowCount(len(td))
+        table.setColumnCount(len(td.columns))
+        table.setHorizontalHeaderLabels([str(c) for c in td.columns])
+        for ri, (_, row) in enumerate(td.iterrows()):
+            for ci, val in enumerate(row):
+                item = QTableWidgetItem(str(val))
+                item.setFlags(item.flags() & ~Qt.ItemIsEditable)
+                table.setItem(ri, ci, item)
+        table.resizeColumnsToContents()
+        table.setSortingEnabled(True)
 
     def select_output_dir(self):
         folder = QFileDialog.getExistingDirectory(self, "选择输出目录")
@@ -289,47 +358,37 @@ class MainWindow(QWidget):
         self.output_label.setText(folder)
         self.log(f"输出目录: {folder}")
 
-    def preview_file(self, item):
-        idx = self.file_list.row(item)
-        if 0 <= idx < len(self.current_files):
-            PreviewWindow(self.current_files[idx]).exec()
-
-    def start_process(self, mode="merge"):
+    def auto_process(self):
+        """自动处理：文件夹→合并，单文件→直接处理。"""
         if not self.current_files:
-            self.log("请先选择文件夹或文件")
+            self.log("请先导入数据")
             return
+
         tmpl = self.template_box.currentText()
         mapping = None
         if tmpl and tmpl != "自动识别":
             mapping = self.template_manager.load_template(tmpl)
             if mapping:
-                self.log(f"加载模板: {tmpl}")
+                self.log(f"📋 模板: {tmpl}")
 
         self.status_badge.setText("处理中...")
-        if mode == "direct":
-            idx = self.file_list.currentRow()
-            if idx < 0 or idx >= len(self.current_files):
-                self.log("请在文件列表中点击选中要直接处理的文件")
+
+        try:
+            result = merge_excel_files(self.current_files, "merged.xlsx", mapping, self.output_dir)
+            if not result or result.get("df") is None or result["df"].empty:
+                self.log("❌ 处理失败：无有效数据")
                 self.status_badge.setText("就绪")
                 return
-            target = [self.current_files[idx]]
-            self.log(f"直接处理: {os.path.basename(target[0])}")
-            result = merge_excel_files(target, "processed.xlsx", mapping, self.output_dir)
-        else:
-            self.log(f"合并处理 {len(self.current_files)} 个文件 ...")
-            result = merge_excel_files(self.current_files, "merged.xlsx", mapping, self.output_dir)
-
-        if not result or result.get("df") is None or result["df"].empty:
-            self.log("处理失败：没有可合并的数据")
+            self.merged_df = result["df"]
+            self.status_badge.setText(f"完成 {len(self.merged_df):,}条")
+            for line in result.get("logs", []):
+                self.log(line)
+            self.update_call_summary()
+            self.run_call_summary()
+        except Exception as e:
+            self.log(f"❌ 处理异常: {e}")
+        finally:
             self.status_badge.setText("就绪")
-            return
-        self.merged_df = result["df"]
-        self.status_badge.setText("处理完成")
-        for line in result.get("logs", []):
-            self.log(line)
-        self.update_call_summary()
-        self.run_call_summary()
-        self.status_badge.setText("就绪")
 
     def update_call_summary(self):
         summary = get_data_summary(self.merged_df)
@@ -377,29 +436,9 @@ class MainWindow(QWidget):
     # ══════════════════════════════════════════════
 
     def show_call_table(self, df):
-        self.result_table.setSortingEnabled(False)
-        self.result_table.clear()
-        if df is None or df.empty:
-            self.result_table.setRowCount(0)
-            self.result_table.setColumnCount(0)
-            self.result_table.setSortingEnabled(True)
-            return
-        # 限制显示行数
-        show = df.head(MAX_TABLE_ROWS)
-        td = show.fillna("").copy()
-        self.result_table.setRowCount(len(td))
-        self.result_table.setColumnCount(len(td.columns))
-        self.result_table.setHorizontalHeaderLabels([str(c) for c in td.columns])
-        for ri, (_, row) in enumerate(td.iterrows()):
-            for ci, val in enumerate(row):
-                item = QTableWidgetItem(str(val))
-                item.setFlags(item.flags() & ~Qt.ItemIsEditable)
-                self.result_table.setItem(ri, ci, item)
-        self.result_table.resizeColumnsToContents()
-        self.result_table.setSortingEnabled(True)
-        total = len(df)
-        if total > MAX_TABLE_ROWS:
-            self.log(f"(表格显示前 {MAX_TABLE_ROWS} 行，共 {total} 行)")
+        self._fill_table(self.result_table, df.head(MAX_TABLE_ROWS) if df is not None else df)
+        if df is not None and len(df) > MAX_TABLE_ROWS:
+            self.log(f"(显示前 {MAX_TABLE_ROWS} 行，共 {len(df)} 行)")
 
     def open_mapping(self):
         if not self.current_files:
