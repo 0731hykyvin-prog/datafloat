@@ -54,7 +54,7 @@ class MainWindow(QWidget):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Datafloat 数据处理平台 V3.0")
-        self.resize(1366, 768)
+        self.resize(1280, 700)
 
         self.current_files = []
         self.merged_df = None
