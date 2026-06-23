@@ -5,12 +5,14 @@ TAB 2: 银行交易分析（流水快进快出+风险评分）
 """
 
 import os
+import queue
 import threading
 
 import pandas as pd
 
 from ui.qt_compat import (
     Qt,
+    QTimer,
     QComboBox,
     QFileDialog,
     QFrame,
@@ -60,9 +62,15 @@ class MainWindow(QWidget):
         self.template_manager = TemplateManager()
         self.metric_labels = {}
         self._busy = False
+        self._log_queue = queue.Queue()
 
         self.init_ui()
         self.apply_style()
+
+        # 定时从队列取日志到 UI（线程安全）
+        self._log_timer = QTimer()
+        self._log_timer.timeout.connect(self._flush_logs)
+        self._log_timer.start(100)
         self.refresh_templates()
         self.update_call_summary()
 
@@ -463,7 +471,16 @@ class MainWindow(QWidget):
         self.template_box.addItems(["自动识别"] + tmpls)
 
     def log(self, msg):
-        self.log_box.append(str(msg))
+        """线程安全的日志：入队，主线程定时刷新到 UI。"""
+        self._log_queue.put(str(msg))
+
+    def _flush_logs(self):
+        """主线程从队列取日志写入 UI。"""
+        while not self._log_queue.empty():
+            try:
+                self.log_box.append(self._log_queue.get_nowait())
+            except queue.Empty:
+                break
 
     # ══════════════════════════════════════════════
     # 分析方法（在后台线程中执行）

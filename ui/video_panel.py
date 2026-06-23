@@ -3,10 +3,12 @@
 """
 
 import os
+import queue
 import threading
 
 from ui.qt_compat import (
     Qt,
+    QTimer,
     QDoubleSpinBox,
     QFileDialog,
     QFrame,
@@ -31,7 +33,13 @@ class VideoPanel(QWidget):
         super().__init__()
         self._busy = False
         self._buttons = []
+        self._log_queue = queue.Queue()
+
         self.init_ui()
+
+        self._log_timer = QTimer()
+        self._log_timer.timeout.connect(self._flush_logs)
+        self._log_timer.start(100)
 
     def _set_busy(self, busy):
         self._busy = busy
@@ -179,7 +187,15 @@ class VideoPanel(QWidget):
         self.table.resizeColumnsToContents()
 
     def log(self, msg):
-        self.log_box.append(str(msg))
+        """线程安全日志。"""
+        self._log_queue.put(str(msg))
+
+    def _flush_logs(self):
+        while not self._log_queue.empty():
+            try:
+                self.log_box.append(self._log_queue.get_nowait())
+            except queue.Empty:
+                break
 
     def _pick_folder(self, entry):
         path = QFileDialog.getExistingDirectory(self, "选择文件夹")

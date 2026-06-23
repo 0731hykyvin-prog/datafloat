@@ -4,6 +4,7 @@
 """
 
 import os
+import queue
 import threading
 from datetime import datetime
 
@@ -11,6 +12,7 @@ import pandas as pd
 
 from ui.qt_compat import (
     Qt,
+    QTimer,
     QFileDialog,
     QFrame,
     QGroupBox,
@@ -59,8 +61,13 @@ class BankPanel(QWidget):
         self._busy = False
         self._buttons = []
         self._log_widgets = []
+        self._log_queue = queue.Queue()
 
         self.init_ui()
+
+        self._log_timer = QTimer()
+        self._log_timer.timeout.connect(self._flush_logs)
+        self._log_timer.start(100)
 
     # ── 线程安全 ──
     def _set_busy(self, busy):
@@ -83,8 +90,17 @@ class BankPanel(QWidget):
         threading.Thread(target=w, daemon=True).start()
 
     def _log_last(self, msg):
-        if self._log_widgets:
-            self._log_widgets[-1].append(str(msg))
+        """线程安全日志。"""
+        self._log_queue.put(str(msg))
+
+    def _flush_logs(self):
+        while not self._log_queue.empty():
+            try:
+                msg = self._log_queue.get_nowait()
+                if self._log_widgets:
+                    self._log_widgets[-1].append(msg)
+            except queue.Empty:
+                break
 
     # ── UI ──
     def init_ui(self):
