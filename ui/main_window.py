@@ -43,7 +43,6 @@ from core.excel_engine import merge_excel_files
 from core.file_loader import scan_files
 from core.template_manager import TemplateManager
 from ui.bank_panel import BankPanel
-from ui.bank_tools_panel import BankToolsPanel
 from ui.mapping_window import MappingWindow
 from ui.preview_window import PreviewWindow
 from ui.video_panel import VideoPanel
@@ -107,7 +106,6 @@ class MainWindow(QWidget):
         self.tabs = QTabWidget()
         self.tabs.addTab(self._build_call_tab(), "📞 话单分析")
         self.tabs.addTab(BankPanel(), "🏦 银行交易分析")
-        self.tabs.addTab(BankToolsPanel(), "🔧 银行工具集")
         self.tabs.addTab(VideoPanel(), "📹 视频布控")
         root.addWidget(self.tabs, 1)
 
