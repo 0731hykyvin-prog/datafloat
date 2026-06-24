@@ -12,7 +12,6 @@ import pandas as pd
 
 from ui.qt_compat import (
     Qt,
-    QCheckBox,
     QTimer,
     QFileDialog,
     QFrame,
@@ -31,8 +30,6 @@ from ui.qt_compat import (
 )
 
 from core.bank_analyzer import (
-    calculate_risk_score,
-    export_person_summary,
     filter_night_trades,
     filter_quick_in_out,
     filter_sensitive_amount,
@@ -196,81 +193,77 @@ class BankPanel(QWidget):
     def _tab_core(self):
         w, ctrl, cl, table, tlog = self._panel()
 
-        # ── 数据导入 ──
-        g1 = QGroupBox("导入")
+        # ── 导入 ──
+        g1 = QGroupBox("数据")
         g1l = QVBoxLayout(g1)
         self.lbl_file = QLabel("未选择文件")
         self.lbl_file.setWordWrap(True)
         self.lbl_file.setObjectName("pathLabel")
         g1l.addWidget(self.lbl_file)
-        bf = QPushButton("选择银行流水 Excel")
+        bf = QPushButton("导入Excel")
         bf.setObjectName("primaryButton")
         bf.clicked.connect(self._sel_file)
         g1l.addWidget(bf)
-
         g1l.addWidget(QLabel("输出目录"))
         orow = QHBoxLayout()
         self.out_label = QLabel("银行交易分析结果")
-        self.out_label.setObjectName("pathLabel")
-        self.out_label.setWordWrap(True)
-        ob = QPushButton("选")
-        ob.setFixedWidth(40)
+        self.out_label.setObjectName("pathLabel"); self.out_label.setWordWrap(True)
+        ob = QPushButton("选"); ob.setFixedWidth(40)
         ob.clicked.connect(self._sel_outdir)
-        orow.addWidget(self.out_label, 1)
-        orow.addWidget(ob)
+        orow.addWidget(self.out_label, 1); orow.addWidget(ob)
         g1l.addLayout(orow)
         cl.addWidget(g1)
 
-        # ── 筛选条件（多选，可同时执行）──
-        g2 = QGroupBox("筛选条件")
+        # ── 组合筛选（按钮可按下/弹起，任意组合）──
+        g2 = QGroupBox("组合筛选")
         g2l = QVBoxLayout(g2)
 
-        # 快进快出 + 高频阈值
-        self.chk_quick = QCheckBox("快进快出")
-        self.chk_quick.setChecked(True)
-        g2l.addWidget(self.chk_quick)
-        hr1 = QHBoxLayout()
-        hr1.addWidget(QLabel("高频阈值 >"))
-        self.spin_freq = QSpinBox(); self.spin_freq.setRange(1, 99999); self.spin_freq.setValue(50)
-        hr1.addWidget(self.spin_freq); hr1.addWidget(QLabel("条"))
-        hr1.addStretch()
-        g2l.addLayout(hr1)
+        # 快进快出
+        self.btn_quick = QPushButton("快进快出")
+        self.btn_quick.setCheckable(True)
+        self.btn_quick.setChecked(True)
+        self.btn_quick.setStyleSheet("QPushButton:checked { background: #1d4ed8; color: #fff; font-weight:600; }")
+        self.btn_quick.clicked.connect(self._run_core_combined)
+        g2l.addWidget(self.btn_quick)
 
         # 敏感金额
-        self.chk_amount = QCheckBox("敏感金额")
-        self.chk_amount.setChecked(True)
-        g2l.addWidget(self.chk_amount)
-        hr2 = QHBoxLayout()
-        hr2.addWidget(QLabel("≥"))
-        self.spin_base = QSpinBox(); self.spin_base.setRange(100, 999999); self.spin_base.setValue(500)
-        hr2.addWidget(self.spin_base)
-        hr2.addWidget(QLabel("且 %"))
-        self.spin_step = QSpinBox(); self.spin_step.setRange(1, 99999); self.spin_step.setValue(100)
-        hr2.addWidget(self.spin_step); hr2.addWidget(QLabel("=0"))
-        hr2.addStretch()
-        g2l.addLayout(hr2)
+        r2 = QHBoxLayout()
+        r2.addWidget(QLabel("≥"))
+        self.spin_base = QSpinBox(); self.spin_base.setRange(100,999999); self.spin_base.setValue(500)
+        self.spin_base.setFixedWidth(80)
+        r2.addWidget(self.spin_base)
+        r2.addWidget(QLabel("%"))
+        self.spin_step = QSpinBox(); self.spin_step.setRange(1,99999); self.spin_step.setValue(100)
+        self.spin_step.setFixedWidth(65)
+        r2.addWidget(self.spin_step)
+        r2.addWidget(QLabel("=0"))
+        r2.addStretch()
+        g2l.addLayout(r2)
+        self.btn_amount = QPushButton("敏感金额")
+        self.btn_amount.setCheckable(True)
+        self.btn_amount.setStyleSheet("QPushButton:checked { background: #1d4ed8; color: #fff; font-weight:600; }")
+        self.btn_amount.clicked.connect(self._run_core_combined)
+        g2l.addWidget(self.btn_amount)
 
         # 深夜交易
-        self.chk_night = QCheckBox("深夜交易")
-        self.chk_night.setChecked(True)
-        g2l.addWidget(self.chk_night)
-        hr3 = QHBoxLayout()
-        self.spin_nstart = QSpinBox(); self.spin_nstart.setRange(0, 23); self.spin_nstart.setValue(21)
-        hr3.addWidget(self.spin_nstart)
-        hr3.addWidget(QLabel(":00 —"))
-        self.spin_nend = QSpinBox(); self.spin_nend.setRange(0, 23); self.spin_nend.setValue(5)
-        hr3.addWidget(self.spin_nend); hr3.addWidget(QLabel(":00"))
-        hr3.addStretch()
-        g2l.addLayout(hr3)
+        r3 = QHBoxLayout()
+        self.spin_nstart = QSpinBox(); self.spin_nstart.setRange(0,23); self.spin_nstart.setValue(21)
+        self.spin_nstart.setFixedWidth(50)
+        r3.addWidget(self.spin_nstart)
+        r3.addWidget(QLabel(":00 —"))
+        self.spin_nend = QSpinBox(); self.spin_nend.setRange(0,23); self.spin_nend.setValue(5)
+        self.spin_nend.setFixedWidth(50)
+        r3.addWidget(self.spin_nend)
+        r3.addWidget(QLabel(":00"))
+        r3.addStretch()
+        g2l.addLayout(r3)
+        self.btn_night = QPushButton("深夜交易")
+        self.btn_night.setCheckable(True)
+        self.btn_night.setStyleSheet("QPushButton:checked { background: #1d4ed8; color: #fff; font-weight:600; }")
+        self.btn_night.clicked.connect(self._run_core_combined)
+        g2l.addWidget(self.btn_night)
 
-        # 风险评分
-        self.chk_risk = QCheckBox("风险评分 + 人员汇总")
-        self.chk_risk.setChecked(True)
-        g2l.addWidget(self.chk_risk)
         cl.addWidget(g2)
-
-        # ── 一键执行 ──
-        cl.addWidget(self._make_btn("🚀 执行筛选", self._run_core_all, True))
         cl.addStretch()
 
         self._table_core = table
@@ -300,51 +293,39 @@ class BankPanel(QWidget):
             return False
         return True
 
-    def _run_core_all(self):
-        """一键执行所有勾选的筛选条件。"""
+    def _run_core_combined(self):
+        """根据按下的按钮，对原始数据依次叠加筛选。"""
         if not self._ensure_df():
             return
         src = self.df
         self._log_last("=" * 40)
+        active = []
 
-        # 1. 快进快出
-        if self.chk_quick.isChecked():
-            r, logs = filter_quick_in_out(src, min_hits=self.spin_freq.value())
+        if self.btn_quick.isChecked():
+            active.append("快进快出")
+            r, logs = filter_quick_in_out(src)
             src = r
             for l in logs: self._log_last(l)
-            self._show_table(r, self._table_core)
             self._save_excel(r, "B01_快进快出.xlsx")
 
-        # 2. 敏感金额
-        if self.chk_amount.isChecked():
+        if self.btn_amount.isChecked():
+            active.append("敏感金额")
             r, logs = filter_sensitive_amount(src, base=self.spin_base.value(), step=self.spin_step.value())
             src = r
             for l in logs: self._log_last(l)
-            self._show_table(r, self._table_core)
             self._save_excel(r, "B02_敏感金额.xlsx")
 
-        # 3. 深夜交易
-        if self.chk_night.isChecked():
+        if self.btn_night.isChecked():
+            active.append("深夜交易")
             r, logs = filter_night_trades(src, start_h=self.spin_nstart.value(), end_h=self.spin_nend.value())
             src = r
             for l in logs: self._log_last(l)
-            self._show_table(r, self._table_core)
             self._save_excel(r, "B03_深夜交易.xlsx")
 
-        # 4. 风险评分
-        if self.chk_risk.isChecked():
-            acc, person = calculate_risk_score(src)
-            self._log_last(f"风险评分: {len(acc)}账户, {len(person)}人")
-            self._show_table(person, self._table_core)
-            self._save_excel(acc, "B04_账户风险.xlsx")
-            self._save_excel(person, "B05_人员风险.xlsx")
-            # 人员名单
-            p, s = export_person_summary(person, self.output_dir)
-            self._log_last(f"人员名单: {p} ({len(s)}人)")
-
         self.current_result = src
+        self._show_table(src, self._table_core)
+        self._log_last(f"✅ 活跃筛选: {' + '.join(active) if active else '无'}  →  {len(src):,} 条")
         self._log_last("=" * 40)
-        self._log_last(f"✅ 筛选完成，共 {len(src):,} 条")
 
     # ══════════════════════════════════════════════
     # Tab 2: CSV合并
