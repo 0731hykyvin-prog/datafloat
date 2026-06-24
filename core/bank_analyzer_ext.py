@@ -45,8 +45,8 @@ def read_csv_auto_encoding(file_path):
 def merge_csv_folder(folder_path, log_callback=None):
     """
     扫描文件夹下所有 CSV，按文件名分类合并。
-    - 文件名含"交易明细" → 合并为交易明细
-    - 文件名含"账户信息" → 合并为账户信息
+    - 文件名含"银行交易明细" → 合并为交易明细
+    - 文件名含"银行账户信息" → 合并为账户信息
     - 文件名含"合并结果" → 跳过
     返回: {"交易明细": output_path, "账户信息": output_path}, logs
     """
@@ -66,14 +66,14 @@ def merge_csv_folder(folder_path, log_callback=None):
         name = os.path.basename(f)
         if "合并结果" in name:
             skipped.append(name)
-        elif "交易明细" in name:
+        elif "银行交易明细" in name:
             trans_files.append(f)
-        elif "账户信息" in name:
+        elif "银行账户信息" in name:
             acc_files.append(f)
         else:
             skipped.append(name)
 
-    log(f"交易明细: {len(trans_files)} 个, 账户信息: {len(acc_files)} 个, 跳过: {len(skipped)} 个")
+    log(f"银行交易明细: {len(trans_files)} 个, 银行账户信息: {len(acc_files)} 个, 跳过: {len(skipped)} 个")
 
     results = {}
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -100,15 +100,28 @@ def merge_csv_folder(folder_path, log_callback=None):
     # 合并账户信息
     if acc_files:
         all_data = []
+        ccb_count = 0
         for f in acc_files:
             try:
                 df = read_csv_auto_encoding(f)
                 df.columns = [clean_text(c) for c in df.columns]
+
+                # 建设银行特殊清洗：卡号/账号只保留前19位数字
+                if "建设银行" in os.path.basename(f):
+                    for col in ["交易卡号", "交易账号"]:
+                        if col in df.columns:
+                            df[col] = df[col].astype(str).str.extract(r'(\d{19})')[0]
+                            ccb_count += 1
+                    log(f"  🔧 {os.path.basename(f)}: 建设银行清洗（卡号/账号→19位）")
+
                 df["来源文件"] = os.path.basename(f)
                 all_data.append(df)
                 log(f"  ✓ {os.path.basename(f)}: {len(df)}行")
             except Exception as e:
                 log(f"  ✗ {os.path.basename(f)}: {e}")
+        if ccb_count:
+            log(f"  共清洗 {ccb_count} 个建设银行字段")
+
         if all_data:
             merged = pd.concat(all_data, ignore_index=True)
             path = os.path.join(folder_path, f"银行账户信息合并结果_{timestamp}.xlsx")
@@ -123,10 +136,14 @@ def merge_csv_folder(folder_path, log_callback=None):
 # 2. 补全交易明细
 # ══════════════════════════════════════════════════════
 
-def complete_transactions(trans_path, acc_path, deduplicate=True, log_callback=None):
+def complete_transactions(trans_path, acc_path, log_callback=None):
     """
     用账户信息补全交易明细的缺失字段（卡号/户名/证件号）。
-    返回: (补全后 DataFrame, 输出路径, 日志列表)
+
+    匹配逻辑：
+    1. 优先用"交易账号"匹配
+    2. 匹配不上则用"交易卡号"匹配
+    3. 补全：交易卡号、账户开户名称、开户人证件号码
     """
     def log(msg):
         if log_callback:
@@ -135,36 +152,81 @@ def complete_transactions(trans_path, acc_path, deduplicate=True, log_callback=N
     df_trans = pd.read_excel(trans_path)
     df_acc = pd.read_excel(acc_path)
 
+    # 清洗：去除所有字符串字段的制表符和首尾空白
+    for df_ in (df_trans, df_acc):
+        for col in df_.columns:
+            df_[col] = df_[col].astype(str).str.replace("\t", "").str.strip()
+            df_[col] = df_[col].replace(["nan", "None", ""], pd.NA)
+
     log(f"交易明细: {len(df_trans)}行, 账户信息: {len(df_acc)}行")
 
-    # 去重
-    if deduplicate and "交易流水号" in df_trans.columns:
-        before = len(df_trans)
-        df_trans = df_trans.drop_duplicates(subset=["交易流水号"], keep='first')
-        log(f"去重: {before} → {len(df_trans)} 行")
-
-    # 填充交易卡号
-    if "交易卡号" in df_trans.columns and "交易账号" in df_trans.columns:
-        if "交易账号" in df_acc.columns and "交易卡号" in df_acc.columns:
-            empty = df_trans["交易卡号"].isna()
-            card_map = df_acc.dropna(subset=["交易卡号"]).set_index("交易账号")["交易卡号"].to_dict()
-            df_trans.loc[empty, "交易卡号"] = df_trans.loc[empty, "交易账号"].map(card_map)
-            filled = df_trans.loc[empty, "交易卡号"].notna().sum()
-            log(f"填充交易卡号: {filled}/{empty.sum()}条")
-
-    # 填充账户信息
-    for col in ["账户开户名称", "开户人证件号码"]:
+    # 确保补全目标列存在（字符串类型避免 dtype 冲突）
+    for col in ["交易卡号", "账户开户名称", "开户人证件号码"]:
         if col not in df_trans.columns:
-            df_trans[col] = None
+            df_trans[col] = ""
+        df_trans[col] = df_trans[col].astype(object)
 
-    if "交易账号" in df_acc.columns:
-        for _, row in df_acc.iterrows():
-            acc = str(row.get("交易账号", ""))
-            if acc and acc != "nan":
-                mask = (df_trans["交易账号"].astype(str) == acc)
-                for col in ["账户开户名称", "开户人证件号码"]:
-                    if col in df_acc.columns:
-                        df_trans.loc[mask & df_trans[col].isna(), col] = str(row.get(col, ""))
+    def _clean_num(val):
+        """清洗数字字段：去科学计数法、去小数点、去空格。"""
+        if pd.isna(val):
+            return ""
+        s = str(val).strip()
+        try:
+            s = str(int(float(s)))  # 处理科学计数法如 6.22e+18
+        except ValueError:
+            pass
+        return s
+
+    # 构建两个索引
+    acc_by_account = {}
+    acc_by_card = {}
+    for _, row in df_acc.iterrows():
+        account = _clean_num(row.get("交易账号"))
+        card = _clean_num(row.get("交易卡号"))
+        info = {
+            "交易卡号": _clean_num(row.get("交易卡号")),
+            "账户开户名称": str(row.get("账户开户名称", "")).strip() if pd.notna(row.get("账户开户名称")) else "",
+            "开户人证件号码": str(row.get("开户人证件号码", "")).strip() if pd.notna(row.get("开户人证件号码")) else "",
+        }
+        if account:
+            acc_by_account[account] = info
+        if card:
+            acc_by_card[card] = info
+
+    log(f"索引构建: 按账号{len(acc_by_account)}条, 按卡号{len(acc_by_card)}条")
+
+    filled_1 = 0
+    filled_2 = 0
+    fill_cols = ["交易卡号", "账户开户名称", "开户人证件号码"]
+
+    # ═══ 第一遍：交易账号 对 交易账号 ═══
+    for idx, row in df_trans.iterrows():
+        trans_account = _clean_num(row.get("交易账号"))
+        if not trans_account:
+            continue
+        match = acc_by_account.get(trans_account)
+        if match:
+            for col in fill_cols:
+                current = str(df_trans.at[idx, col]).strip() if pd.notna(df_trans.at[idx, col]) else ""
+                if not current or current in ("nan", "None", ""):
+                    df_trans.at[idx, col] = match.get(col, "")
+            filled_1 += 1
+
+    # ═══ 第二遍：交易卡号 对 交易卡号 ═══
+    for idx, row in df_trans.iterrows():
+        trans_card = _clean_num(row.get("交易卡号"))
+        if not trans_card:
+            continue
+        match = acc_by_card.get(trans_card)
+        if match:
+            for col in fill_cols:
+                current = str(df_trans.at[idx, col]).strip() if pd.notna(df_trans.at[idx, col]) else ""
+                if not current or current in ("nan", "None", ""):
+                    df_trans.at[idx, col] = match.get(col, "")
+            filled_2 += 1
+
+    log(f"第一遍(交易账号匹配): {filled_1}条")
+    log(f"第二遍(交易卡号匹配): {filled_2}条")
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     out_dir = os.path.dirname(trans_path)
