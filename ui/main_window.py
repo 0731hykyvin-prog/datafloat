@@ -34,11 +34,9 @@ from ui.qt_compat import (
 
 from core.analytics import (
     get_data_summary,
-    get_global_top_contacts,
     get_night_calls_by_user,
     get_night_calls_summary,
     get_risk_by_user,
-    get_risk_contacts,
     get_top_contacts_by_user,
 )
 from core.excel_engine import merge_excel_files

@@ -6,7 +6,6 @@
 import os
 import queue
 import threading
-from datetime import datetime
 
 import pandas as pd
 

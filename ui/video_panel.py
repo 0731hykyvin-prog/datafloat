@@ -2,7 +2,6 @@
 视频布控分析面板
 """
 
-import os
 import queue
 import threading
 

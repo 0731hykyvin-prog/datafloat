@@ -4,8 +4,6 @@
 快进快出、敏感金额、深夜交易、高频账户、ATM取款、配送交易、风险评分。
 """
 
-import os
-from datetime import time
 
 import pandas as pd
 

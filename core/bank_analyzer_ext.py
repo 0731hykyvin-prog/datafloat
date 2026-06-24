@@ -7,13 +7,10 @@ CSV合并 / 补全 / 行为分析 / 关联分析 / 高级筛选
 
 import os
 import glob
-import re
+from datetime import datetime
+
 from collections import defaultdict
-from datetime import datetime, timedelta
-
 import pandas as pd
-from openpyxl import load_workbook
-
 
 # ══════════════════════════════════════════════════════
 # 工具函数
@@ -27,7 +24,6 @@ def clean_text(text):
         text = text.replace(char, '')
     return text.strip()
 
-
 def read_csv_auto_encoding(file_path):
     encodings = ['utf-8', 'gb18030', 'gb2312', 'gbk', 'latin1']
     for enc in encodings:
@@ -36,7 +32,6 @@ def read_csv_auto_encoding(file_path):
         except Exception:
             continue
     raise Exception(f"无法读取: {file_path}")
-
 
 # ══════════════════════════════════════════════════════
 # 1. CSV 合并
@@ -130,7 +125,6 @@ def merge_csv_folder(folder_path, log_callback=None):
             log(f"✅ 账户信息: {os.path.basename(path)} ({len(merged)}行)")
 
     return results
-
 
 # ══════════════════════════════════════════════════════
 # 2. 补全交易明细
@@ -238,137 +232,15 @@ def complete_transactions(trans_path, acc_path, log_callback=None):
 
     return df_trans, out_path
 
-
 # ══════════════════════════════════════════════════════
 # 3. 账户行为分析
 # ══════════════════════════════════════════════════════
-
-def analyze_account_behavior(df, freq_threshold=10, amount_threshold=50000,
-                              time_window_days=30, log_callback=None):
-    """
-    高频/大额账户识别。
-    返回: {"高频账户": DataFrame, "大额账户": DataFrame, "输出路径": str}
-    """
-    def log(msg):
-        if log_callback:
-            log_callback(msg)
-
-    if "交易时间" in df.columns:
-        df["_dt"] = pd.to_datetime(df["交易时间"], errors="coerce")
-    if "交易金额" in df.columns:
-        df["_amt"] = pd.to_numeric(df["交易金额"], errors="coerce")
-
-    account_col = "交易账号"
-    if account_col not in df.columns:
-        account_col = "交易卡号"
-
-    results = {}
-    if account_col in df.columns:
-        groups = df.groupby(account_col)
-        log(f"活跃账户: {len(groups)} 个")
-
-        high_freq = []
-        high_amt = []
-        for acc, grp in groups:
-            cnt = len(grp)
-            total = grp["_amt"].sum() if "_amt" in grp.columns else 0
-            if cnt >= freq_threshold:
-                high_freq.append({"账户": acc, "交易次数": cnt, "总金额": round(total, 2)})
-            if total >= amount_threshold:
-                high_amt.append({"账户": acc, "交易次数": cnt, "总金额": round(total, 2)})
-
-        results["高频账户"] = pd.DataFrame(high_freq).sort_values("交易次数", ascending=False)
-        results["大额账户"] = pd.DataFrame(high_amt).sort_values("总金额", ascending=False)
-        log(f"高频账户(≥{freq_threshold}次): {len(high_freq)} 个")
-        log(f"大额账户(≥{amount_threshold:,}元): {len(high_amt)} 个")
-
-    return results
-
 
 # ══════════════════════════════════════════════════════
 # 4. 关联分析
 # ══════════════════════════════════════════════════════
 
-def analyze_relations(df, min_count=3, min_amount=10000, log_callback=None):
-    """
-    发现账户间交易关联关系。
-    返回: DataFrame(来源账户, 目标账户, 交易次数, 总金额)
-    """
-    def log(msg):
-        if log_callback:
-            log_callback(msg)
-
-    relations = defaultdict(lambda: {"count": 0, "total": 0})
-
-    for _, row in df.iterrows():
-        from_acc = str(row.get("交易账号", "")).strip()
-        to_acc = str(row.get("交易方账号", "")).strip()
-        amt = pd.to_numeric(row.get("交易金额", 0), errors="coerce") or 0
-
-        if from_acc and to_acc and from_acc != "nan" and to_acc != "nan" and from_acc != to_acc:
-            key = (from_acc, to_acc)
-            relations[key]["count"] += 1
-            relations[key]["total"] += amt
-
-    significant = []
-    for (a, b), d in relations.items():
-        if d["count"] >= min_count and d["total"] >= min_amount:
-            significant.append({
-                "来源账户": a, "目标账户": b,
-                "交易次数": d["count"], "总金额": round(d["total"], 2),
-            })
-
-    result = pd.DataFrame(significant).sort_values("交易次数", ascending=False)
-    log(f"发现 {len(result)} 个显著关联 (≥{min_count}次, ≥{min_amount:,}元)")
-    return result
-
-
 # ══════════════════════════════════════════════════════
 # 5. 高级筛选
 # ══════════════════════════════════════════════════════
 
-def advanced_filter(df, amount_min=None, amount_max=None,
-                     date_start=None, date_end=None,
-                     direction=None, keyword=None, log_callback=None):
-    """
-    多条件组合筛选。
-    返回: 筛选后 DataFrame, 统计信息 dict
-    """
-    def log(msg):
-        if log_callback:
-            log_callback(msg)
-
-    original = len(df)
-    df = df.copy()
-
-    if "交易时间" in df.columns:
-        df["_dt"] = pd.to_datetime(df["交易时间"], errors="coerce")
-    if "交易金额" in df.columns:
-        df["_amt"] = pd.to_numeric(df["交易金额"], errors="coerce")
-
-    if amount_min is not None and amount_min != "":
-        df = df[df["_amt"] >= float(amount_min)]
-        log(f"金额≥{amount_min}: {len(df)}条")
-    if amount_max is not None and amount_max != "":
-        df = df[df["_amt"] <= float(amount_max)]
-        log(f"金额≤{amount_max}: {len(df)}条")
-    if date_start and str(date_start).strip():
-        df = df[df["_dt"] >= pd.to_datetime(date_start)]
-        log(f"时间≥{date_start}: {len(df)}条")
-    if date_end and str(date_end).strip():
-        df = df[df["_dt"] <= pd.to_datetime(date_end)]
-        log(f"时间≤{date_end}: {len(df)}条")
-    if keyword and keyword.strip():
-        kw = keyword.strip()
-        mask = pd.Series(False, index=df.index)
-        for col in ["交易方户名", "对手户名", "摘要说明", "账户开户名称"]:
-            if col in df.columns:
-                mask |= df[col].astype(str).str.contains(kw, na=False, case=False)
-        df = df[mask]
-        log(f"关键词'{kw}': {len(df)}条")
-
-    stats = {
-        "原始": original, "筛选后": len(df),
-        "总金额": round(df["_amt"].sum(), 2) if "_amt" in df.columns else 0,
-    }
-    return df, stats

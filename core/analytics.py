@@ -8,20 +8,16 @@
 import pandas as pd
 import warnings
 
-
 def _empty_df(columns):
     return pd.DataFrame(columns=columns)
-
 
 def _to_datetime(series):
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", UserWarning)
         return pd.to_datetime(series, errors="coerce")
 
-
 def _to_duration_seconds(series):
     return pd.to_numeric(series, errors="coerce").fillna(0)
-
 
 # ══════════════════════════════════════════════════════
 # 数据概览
@@ -52,7 +48,6 @@ def get_data_summary(df):
         "关键字段完整率": f"{completeness}%",
     }
 
-
 # ══════════════════════════════════════════════════════
 # 高频联系人 — 按本方号码分组
 # ══════════════════════════════════════════════════════
@@ -77,23 +72,6 @@ def get_top_contacts_by_user(df, top_n=10):
         )
         result[user] = top
     return result
-
-
-def get_global_top_contacts(df, top_n=20):
-    """全局高频对方号码（跨所有本方号码）。"""
-    columns = ["对方号码", "次数", "涉及本方号码数"]
-    if df is None or df.empty or "对方号码" not in df.columns:
-        return _empty_df(columns)
-    clean = df.dropna(subset=["对方号码"])
-    if clean.empty:
-        return _empty_df(columns)
-    result = clean.groupby("对方号码").agg(次数=("对方号码", "size"))
-    if "本方号码" in clean.columns:
-        result["涉及本方号码数"] = clean.groupby("对方号码")["本方号码"].nunique()
-    else:
-        result["涉及本方号码数"] = 0
-    return result.reset_index().sort_values("次数", ascending=False).head(top_n)
-
 
 # ══════════════════════════════════════════════════════
 # 深夜通话 — 按本方号码分组
@@ -121,7 +99,6 @@ def get_night_calls_by_user(df, start_hour=0, end_hour=5):
         result[user] = group[cols].sort_values("开始时间")
     return result
 
-
 def get_night_calls_summary(df, start_hour=0, end_hour=5):
     """
     深夜通话汇总（不分明细）：按本方号码，统计深夜通话次数、涉及对方号码数。
@@ -142,7 +119,6 @@ def get_night_calls_summary(df, start_hour=0, end_hour=5):
         涉及对方号码数=("对方号码", "nunique"),
     ).reset_index().sort_values("深夜通话次数", ascending=False)
     return summary
-
 
 # ══════════════════════════════════════════════════════
 # 风险关系 — 按（本方号码, 对方号码）分组
@@ -195,7 +171,6 @@ def get_risk_contacts(df, min_calls=5, night_weight=2):
         .sort_values(["风险分", "总次数"], ascending=False)
         .head(50)
     )
-
 
 def get_risk_by_user(df, min_calls=5, night_weight=2):
     """
