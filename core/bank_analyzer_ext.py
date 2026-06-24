@@ -161,7 +161,8 @@ def complete_transactions(trans_path, acc_path, log_callback=None):
     log(f"交易明细: {len(df_trans)}行, 账户信息: {len(df_acc)}行")
 
     # 确保补全目标列存在（字符串类型避免 dtype 冲突）
-    for col in ["交易卡号", "账户开户名称", "开户人证件号码"]:
+    target_cols = ["交易卡号", "交易方户名", "交易方证件号码"]
+    for col in target_cols:
         if col not in df_trans.columns:
             df_trans[col] = ""
         df_trans[col] = df_trans[col].astype(object)
@@ -185,8 +186,8 @@ def complete_transactions(trans_path, acc_path, log_callback=None):
         card = _clean_num(row.get("交易卡号"))
         info = {
             "交易卡号": _clean_num(row.get("交易卡号")),
-            "账户开户名称": str(row.get("账户开户名称", "")).strip() if pd.notna(row.get("账户开户名称")) else "",
-            "开户人证件号码": str(row.get("开户人证件号码", "")).strip() if pd.notna(row.get("开户人证件号码")) else "",
+            "交易方户名": str(row.get("账户开户名称", "")).strip() if pd.notna(row.get("账户开户名称")) else "",
+            "交易方证件号码": str(row.get("开户人证件号码", "")).strip() if pd.notna(row.get("开户人证件号码")) else "",
         }
         if account:
             acc_by_account[account] = info
@@ -197,7 +198,8 @@ def complete_transactions(trans_path, acc_path, log_callback=None):
 
     filled_1 = 0
     filled_2 = 0
-    fill_cols = ["交易卡号", "账户开户名称", "开户人证件号码"]
+    # 账户信息表字段 → 交易明细表字段 的映射
+    fill_map = {"交易卡号": "交易卡号", "交易方户名": "交易方户名", "交易方证件号码": "交易方证件号码"}
 
     # ═══ 第一遍：交易账号 对 交易账号 ═══
     for idx, row in df_trans.iterrows():
@@ -206,10 +208,10 @@ def complete_transactions(trans_path, acc_path, log_callback=None):
             continue
         match = acc_by_account.get(trans_account)
         if match:
-            for col in fill_cols:
-                current = str(df_trans.at[idx, col]).strip() if pd.notna(df_trans.at[idx, col]) else ""
+            for dst_col in fill_map:
+                current = str(df_trans.at[idx, dst_col]).strip() if pd.notna(df_trans.at[idx, dst_col]) else ""
                 if not current or current in ("nan", "None", ""):
-                    df_trans.at[idx, col] = match.get(col, "")
+                    df_trans.at[idx, dst_col] = match.get(dst_col, "")
             filled_1 += 1
 
     # ═══ 第二遍：交易卡号 对 交易卡号 ═══
@@ -219,10 +221,10 @@ def complete_transactions(trans_path, acc_path, log_callback=None):
             continue
         match = acc_by_card.get(trans_card)
         if match:
-            for col in fill_cols:
-                current = str(df_trans.at[idx, col]).strip() if pd.notna(df_trans.at[idx, col]) else ""
+            for dst_col in fill_map:
+                current = str(df_trans.at[idx, dst_col]).strip() if pd.notna(df_trans.at[idx, dst_col]) else ""
                 if not current or current in ("nan", "None", ""):
-                    df_trans.at[idx, col] = match.get(col, "")
+                    df_trans.at[idx, dst_col] = match.get(dst_col, "")
             filled_2 += 1
 
     log(f"第一遍(交易账号匹配): {filled_1}条")

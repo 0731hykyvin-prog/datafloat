@@ -12,6 +12,7 @@ import pandas as pd
 
 from ui.qt_compat import (
     Qt,
+    QCheckBox,
     QTimer,
     QFileDialog,
     QFrame,
@@ -38,9 +39,6 @@ from core.bank_analyzer import (
     load_bank_data,
 )
 from core.bank_analyzer_ext import (
-    advanced_filter,
-    analyze_account_behavior,
-    analyze_relations,
     complete_transactions,
     merge_csv_folder,
 )
@@ -111,9 +109,6 @@ class BankPanel(QWidget):
         self.subtabs.addTab(self._tab_core(), "📊 核心分析")
         self.subtabs.addTab(self._tab_merge(), "📦 CSV合并")
         self.subtabs.addTab(self._tab_complete(), "🔧 补全交易")
-        self.subtabs.addTab(self._tab_behavior(), "📈 行为分析")
-        self.subtabs.addTab(self._tab_relation(), "🔗 关联分析")
-        self.subtabs.addTab(self._tab_filter(), "🔍 高级筛选")
         root.addWidget(self.subtabs)
 
     # ── 公共工具 ──
@@ -201,14 +196,16 @@ class BankPanel(QWidget):
     def _tab_core(self):
         w, ctrl, cl, table, tlog = self._panel()
 
-        # 数据导入
-        g1 = QGroupBox("数据导入")
+        # ── 数据导入 ──
+        g1 = QGroupBox("导入")
         g1l = QVBoxLayout(g1)
         self.lbl_file = QLabel("未选择文件")
         self.lbl_file.setWordWrap(True)
         self.lbl_file.setObjectName("pathLabel")
         g1l.addWidget(self.lbl_file)
-        bf = self._make_btn("选择银行流水", self._sel_file, True)
+        bf = QPushButton("选择银行流水 Excel")
+        bf.setObjectName("primaryButton")
+        bf.clicked.connect(self._sel_file)
         g1l.addWidget(bf)
 
         g1l.addWidget(QLabel("输出目录"))
@@ -224,39 +221,56 @@ class BankPanel(QWidget):
         g1l.addLayout(orow)
         cl.addWidget(g1)
 
-        # 参数
-        g2 = QGroupBox("参数")
+        # ── 筛选条件（多选，可同时执行）──
+        g2 = QGroupBox("筛选条件")
         g2l = QVBoxLayout(g2)
-        g2l.addWidget(QLabel("敏感金额 ≥"))
-        sb = QSpinBox(); sb.setRange(100, 999999); sb.setValue(500)
-        self.spin_base = sb; g2l.addWidget(sb)
-        g2l.addWidget(QLabel("金额公差 %"))
-        ss = QSpinBox(); ss.setRange(1, 99999); ss.setValue(100)
-        self.spin_step = ss; g2l.addWidget(ss)
-        g2l.addWidget(QLabel("高频阈值 >"))
-        sf = QSpinBox(); sf.setRange(1, 99999); sf.setValue(50)
-        self.spin_freq = sf; g2l.addWidget(sf)
-        g2l.addWidget(QLabel("深夜时段"))
-        hr = QHBoxLayout()
-        sn = QSpinBox(); sn.setRange(0, 23); sn.setValue(21)
-        se = QSpinBox(); se.setRange(0, 23); se.setValue(5)
-        hr.addWidget(sn); hr.addWidget(QLabel("-")); hr.addWidget(se)
-        self.spin_nstart = sn; self.spin_nend = se
-        g2l.addLayout(hr)
+
+        # 快进快出 + 高频阈值
+        self.chk_quick = QCheckBox("快进快出")
+        self.chk_quick.setChecked(True)
+        g2l.addWidget(self.chk_quick)
+        hr1 = QHBoxLayout()
+        hr1.addWidget(QLabel("高频阈值 >"))
+        self.spin_freq = QSpinBox(); self.spin_freq.setRange(1, 99999); self.spin_freq.setValue(50)
+        hr1.addWidget(self.spin_freq); hr1.addWidget(QLabel("条"))
+        hr1.addStretch()
+        g2l.addLayout(hr1)
+
+        # 敏感金额
+        self.chk_amount = QCheckBox("敏感金额")
+        self.chk_amount.setChecked(True)
+        g2l.addWidget(self.chk_amount)
+        hr2 = QHBoxLayout()
+        hr2.addWidget(QLabel("≥"))
+        self.spin_base = QSpinBox(); self.spin_base.setRange(100, 999999); self.spin_base.setValue(500)
+        hr2.addWidget(self.spin_base)
+        hr2.addWidget(QLabel("且 %"))
+        self.spin_step = QSpinBox(); self.spin_step.setRange(1, 99999); self.spin_step.setValue(100)
+        hr2.addWidget(self.spin_step); hr2.addWidget(QLabel("=0"))
+        hr2.addStretch()
+        g2l.addLayout(hr2)
+
+        # 深夜交易
+        self.chk_night = QCheckBox("深夜交易")
+        self.chk_night.setChecked(True)
+        g2l.addWidget(self.chk_night)
+        hr3 = QHBoxLayout()
+        self.spin_nstart = QSpinBox(); self.spin_nstart.setRange(0, 23); self.spin_nstart.setValue(21)
+        hr3.addWidget(self.spin_nstart)
+        hr3.addWidget(QLabel(":00 —"))
+        self.spin_nend = QSpinBox(); self.spin_nend.setRange(0, 23); self.spin_nend.setValue(5)
+        hr3.addWidget(self.spin_nend); hr3.addWidget(QLabel(":00"))
+        hr3.addStretch()
+        g2l.addLayout(hr3)
+
+        # 风险评分
+        self.chk_risk = QCheckBox("风险评分 + 人员汇总")
+        self.chk_risk.setChecked(True)
+        g2l.addWidget(self.chk_risk)
         cl.addWidget(g2)
 
-        # 按钮
-        g3 = QGroupBox("分析")
-        g3l = QVBoxLayout(g3)
-        for txt, fn in [
-            ("快进快出", self._run_core_quick),
-            ("敏感金额", self._run_core_sensitive),
-            ("深夜交易", self._run_core_night),
-            ("风险评分", self._run_core_risk),
-            ("导出人员名单", self._run_core_export),
-        ]:
-            g3l.addWidget(self._make_btn(txt, fn, txt == "快进快出"))
-        cl.addWidget(g3)
+        # ── 一键执行 ──
+        cl.addWidget(self._make_btn("🚀 执行筛选", self._run_core_all, True))
         cl.addStretch()
 
         self._table_core = table
@@ -268,7 +282,9 @@ class BankPanel(QWidget):
             self.lbl_file.setText(p)
             try:
                 self.df = load_bank_data(p)
-                self._log_last(f"加载: {len(self.df):,}条  进{(self.df['收付标志']=='进').sum():,}  出{(self.df['收付标志']=='出').sum():,}")
+                self.current_result = None
+                self._show_table(self.df, self._table_core)
+                self._log_last(f"✅ 加载: {len(self.df):,}条  |  进{(self.df['收付标志']=='进').sum():,}  出{(self.df['收付标志']=='出').sum():,}")
             except Exception as e:
                 self._log_last(f"加载失败: {e}")
 
@@ -284,51 +300,51 @@ class BankPanel(QWidget):
             return False
         return True
 
-    def _run_core_quick(self):
-        if not self._ensure_df(): return
-        r, logs = filter_quick_in_out(self.df, min_hits=self.spin_freq.value())
-        self.current_result = r
-        for l in logs:
-            self._log_last(l)
-        self._show_table(r, self._table_core)
-        self._save_excel(r, "B01_快进快出.xlsx")
+    def _run_core_all(self):
+        """一键执行所有勾选的筛选条件。"""
+        if not self._ensure_df():
+            return
+        src = self.df
+        self._log_last("=" * 40)
 
-    def _run_core_sensitive(self):
-        if not self._ensure_df(): return
-        src = self.current_result if self.current_result is not None else self.df
-        r, logs = filter_sensitive_amount(src, base=self.spin_base.value(), step=self.spin_step.value())
-        self.current_result = r
-        for l in logs:
-            self._log_last(l)
-        self._show_table(r, self._table_core)
-        self._save_excel(r, "B02_敏感金额.xlsx")
+        # 1. 快进快出
+        if self.chk_quick.isChecked():
+            r, logs = filter_quick_in_out(src, min_hits=self.spin_freq.value())
+            src = r
+            for l in logs: self._log_last(l)
+            self._show_table(r, self._table_core)
+            self._save_excel(r, "B01_快进快出.xlsx")
 
-    def _run_core_night(self):
-        if not self._ensure_df(): return
-        src = self.current_result if self.current_result is not None else self.df
-        r, logs = filter_night_trades(src, start_h=self.spin_nstart.value(), end_h=self.spin_nend.value())
-        self.current_result = r
-        for l in logs:
-            self._log_last(l)
-        self._show_table(r, self._table_core)
-        self._save_excel(r, "B03_深夜交易.xlsx")
+        # 2. 敏感金额
+        if self.chk_amount.isChecked():
+            r, logs = filter_sensitive_amount(src, base=self.spin_base.value(), step=self.spin_step.value())
+            src = r
+            for l in logs: self._log_last(l)
+            self._show_table(r, self._table_core)
+            self._save_excel(r, "B02_敏感金额.xlsx")
 
-    def _run_core_risk(self):
-        if not self._ensure_df(): return
-        src = self.current_result if self.current_result is not None else self.df
-        acc, person = calculate_risk_score(src)
-        self._log_last(f"风险评分: {len(acc)}账户, {len(person)}人")
-        self._show_table(person, self._table_core)
-        self.current_result = person
-        self._save_excel(acc, "B04_账户风险.xlsx")
-        self._save_excel(person, "B05_人员风险.xlsx")
+        # 3. 深夜交易
+        if self.chk_night.isChecked():
+            r, logs = filter_night_trades(src, start_h=self.spin_nstart.value(), end_h=self.spin_nend.value())
+            src = r
+            for l in logs: self._log_last(l)
+            self._show_table(r, self._table_core)
+            self._save_excel(r, "B03_深夜交易.xlsx")
 
-    def _run_core_export(self):
-        if not self._ensure_df(): return
-        src = self.current_result if self.current_result is not None else self.df
-        p, s = export_person_summary(src, self.output_dir)
-        self._log_last(f"人员名单: {p} ({len(s)}人)")
-        self._show_table(s, self._table_core)
+        # 4. 风险评分
+        if self.chk_risk.isChecked():
+            acc, person = calculate_risk_score(src)
+            self._log_last(f"风险评分: {len(acc)}账户, {len(person)}人")
+            self._show_table(person, self._table_core)
+            self._save_excel(acc, "B04_账户风险.xlsx")
+            self._save_excel(person, "B05_人员风险.xlsx")
+            # 人员名单
+            p, s = export_person_summary(person, self.output_dir)
+            self._log_last(f"人员名单: {p} ({len(s)}人)")
+
+        self.current_result = src
+        self._log_last("=" * 40)
+        self._log_last(f"✅ 筛选完成，共 {len(src):,} 条")
 
     # ══════════════════════════════════════════════
     # Tab 2: CSV合并
@@ -380,112 +396,6 @@ class BankPanel(QWidget):
         df, p = complete_transactions(t, a, log_callback=lambda m: self._log_last(m))
         self._show_table(df.head(200), self._table_comp)
 
-    # ══════════════════════════════════════════════
-    # Tab 4: 行为分析
-    # ══════════════════════════════════════════════
-
-    def _tab_behavior(self):
-        w, ctrl, cl, table, tlog = self._panel()
-        g = QGroupBox("文件 & 参数")
-        gl = QVBoxLayout(g)
-        b = self._file_row(gl, "交易明细:", "behav_file")
-        b.clicked.connect(lambda: self._pick_file(self.behav_file))
-        gl.addWidget(QLabel("高频阈值(次)"))
-        self.b_freq = QSpinBox(); self.b_freq.setRange(1, 99999); self.b_freq.setValue(10)
-        gl.addWidget(self.b_freq)
-        gl.addWidget(QLabel("大额阈值(元)"))
-        self.b_amt = QSpinBox(); self.b_amt.setRange(100, 99999999); self.b_amt.setValue(50000)
-        gl.addWidget(self.b_amt)
-        cl.addWidget(g)
-        cl.addWidget(self._make_btn("开始分析", self._do_behavior, True))
-        cl.addStretch()
-        self._table_behav = table
-        return w
-
-    def _do_behavior(self):
-        f = self.behav_file.text()
-        if not f: self._log_last("请选择文件"); return
-        df = pd.read_excel(f)
-        r = analyze_account_behavior(df, self.b_freq.value(), self.b_amt.value(),
-                                      log_callback=lambda m: self._log_last(m))
-        hf = r.get("高频账户")
-        self._show_table(hf, self._table_behav)
-        if hf is not None and not hf.empty:
-            out = os.path.join(os.path.dirname(f), f"行为分析_{datetime.now():%Y%m%d_%H%M%S}.xlsx")
-            with pd.ExcelWriter(out) as wb:
-                for k, v in r.items():
-                    if isinstance(v, pd.DataFrame) and not v.empty:
-                        v.to_excel(wb, sheet_name=k, index=False)
-            self._log_last(f"📁 {out}")
-
-    # ══════════════════════════════════════════════
-    # Tab 5: 关联分析
-    # ══════════════════════════════════════════════
-
-    def _tab_relation(self):
-        w, ctrl, cl, table, tlog = self._panel()
-        g = QGroupBox("文件 & 参数")
-        gl = QVBoxLayout(g)
-        b = self._file_row(gl, "交易明细:", "rel_file")
-        b.clicked.connect(lambda: self._pick_file(self.rel_file))
-        gl.addWidget(QLabel("最小交易次数"))
-        self.r_cnt = QSpinBox(); self.r_cnt.setRange(1, 99999); self.r_cnt.setValue(3)
-        gl.addWidget(self.r_cnt)
-        gl.addWidget(QLabel("最小总金额(元)"))
-        self.r_amt = QSpinBox(); self.r_amt.setRange(100, 99999999); self.r_amt.setValue(10000)
-        gl.addWidget(self.r_amt)
-        cl.addWidget(g)
-        cl.addWidget(self._make_btn("开始分析", self._do_relation, True))
-        cl.addStretch()
-        self._table_rel = table
-        return w
-
-    def _do_relation(self):
-        f = self.rel_file.text()
-        if not f: self._log_last("请选择文件"); return
-        df = pd.read_excel(f)
-        r = analyze_relations(df, self.r_cnt.value(), self.r_amt.value(),
-                               log_callback=lambda m: self._log_last(m))
-        self._show_table(r, self._table_rel)
-        if not r.empty:
-            self._save_excel(r, "关联分析.xlsx")
-
-    # ══════════════════════════════════════════════
-    # Tab 6: 高级筛选
-    # ══════════════════════════════════════════════
-
-    def _tab_filter(self):
-        w, ctrl, cl, table, tlog = self._panel()
-        g = QGroupBox("文件 & 条件")
-        gl = QVBoxLayout(g)
-        b = self._file_row(gl, "交易明细:", "filt_file")
-        b.clicked.connect(lambda: self._pick_file(self.filt_file))
-        gl.addWidget(QLabel("金额范围"))
-        ar = QHBoxLayout()
-        self.f_amin = QLineEdit(); self.f_amin.setPlaceholderText("最小")
-        self.f_amax = QLineEdit(); self.f_amax.setPlaceholderText("最大")
-        ar.addWidget(self.f_amin); ar.addWidget(QLabel("~")); ar.addWidget(self.f_amax)
-        gl.addLayout(ar)
-        gl.addWidget(QLabel("关键词"))
-        self.f_kw = QLineEdit()
-        gl.addWidget(self.f_kw)
-        cl.addWidget(g)
-        cl.addWidget(self._make_btn("执行筛选", self._do_filter, True))
-        cl.addStretch()
-        self._table_filt = table
-        return w
-
-    def _do_filter(self):
-        f = self.filt_file.text()
-        if not f: self._log_last("请选择文件"); return
-        df = pd.read_excel(f)
-        r, s = advanced_filter(df,
-            amount_min=self.f_amin.text(), amount_max=self.f_amax.text(),
-            keyword=self.f_kw.text(),
-            log_callback=lambda m: self._log_last(m))
-        self._log_last(f"原始{s['原始']}条 → {s['筛选后']}条")
-        self._show_table(r, self._table_filt)
-        self._save_excel(r, "筛选结果.xlsx")
 
     # ── 文件选择工具 ──
     def _pick_dir(self, entry):
